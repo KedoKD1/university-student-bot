@@ -14,3 +14,8 @@ supabase: Client = create_client(
     SUPABASE_URL,
     SUPABASE_KEY,
 )
+
+
+def test_database_connection():
+    response = supabase.table("stages").select("id").limit(1).execute()
+    return response.data
