@@ -79,10 +79,11 @@ async def stage_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await query.edit_message_text(
-        f"📚 المرحلة {stage['stage_number']}\n\n"
-        "اختر من القائمة التالية:"
-    )
+    await show_subjects(
+    update,
+    context,
+    stage_id
+)
 
 
 async def locked_stage_button(
