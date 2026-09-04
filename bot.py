@@ -28,6 +28,13 @@ from bot.handlers.admin import (
     admin_command,
 )
 
+from bot.handlers.admin_subjects import (
+    admin_subjects,
+    delete_subject,
+    manage_stage,
+    manage_subject,
+)
+
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
@@ -38,7 +45,9 @@ def main():
     validate_config()
 
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not configured.")
+        raise ValueError(
+            "BOT_TOKEN is not configured."
+        )
 
     response = (
         supabase
@@ -49,7 +58,8 @@ def main():
     )
 
     print(
-        f"Supabase connection successful: {response.data}"
+        f"Supabase connection successful: "
+        f"{response.data}"
     )
 
     application = (
@@ -124,8 +134,36 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            admin_subjects,
+            pattern=r"^admin_subjects$"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_stage,
+            pattern=r"^manage_stage:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_subject,
+            pattern=r"^manage_subject:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_subject,
+            pattern=r"^delete_subject:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             admin_button,
-            pattern=r"^admin_"
+            pattern=r"^admin_(?!subjects$)"
         )
     )
 
