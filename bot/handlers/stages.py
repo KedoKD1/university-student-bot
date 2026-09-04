@@ -6,8 +6,10 @@ from bot.keyboards.stages import stages_keyboard
 
 
 async def show_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message is None:
+    if update.message is None or update.effective_user is None:
         return
+
+    user_id = update.effective_user.id
 
     response = (
         supabase
@@ -22,19 +24,35 @@ async def show_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎓 أهلاً بك في بوت الطالب الجامعي\n\n"
         "اختر المرحلة الدراسية:",
-        reply_markup=stages_keyboard(stages)
+        reply_markup=stages_keyboard(stages, user_id)
     )
 
 
 async def stage_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
-    if query is None:
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return
+
+    stage_id = parts[1]
+    owner_id = parts[2]
+    current_user_id = str(query.from_user.id)
+
+    if current_user_id != owner_id:
+        await query.answer(
+            "⛔ هذا الاختيار مو إلك.\n"
+            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            show_alert=True
+        )
         return
 
     await query.answer()
-
-    stage_id = query.data.split(":")[1]
 
     response = (
         supabase
@@ -72,7 +90,24 @@ async def locked_stage_button(
 ):
     query = update.callback_query
 
-    if query is None:
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return
+
+    owner_id = parts[2]
+    current_user_id = str(query.from_user.id)
+
+    if current_user_id != owner_id:
+        await query.answer(
+            "⛔ هذا الاختيار مو إلك.\n"
+            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            show_alert=True
+        )
         return
 
     await query.answer(
