@@ -5,6 +5,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
+from bot.database.client import test_database_connection
 from bot.utils.config import BOT_TOKEN, validate_config
 
 
@@ -14,7 +15,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "🎓 مرحباً بك في بوت الطالب الجامعي\n\n"
-        "البوت قيد الإعداد حالياً."
+        "البوت يعمل حالياً."
     )
 
 
@@ -23,6 +24,9 @@ def main():
 
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not configured.")
+
+    database_result = test_database_connection()
+    print(f"Supabase connection successful: {database_result}")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
