@@ -14,6 +14,11 @@ from bot.handlers.subjects import (
     back_to_stages,
     subject_button,
 )
+from bot.handlers.content import (
+    back_to_content,
+    file_button,
+    show_files,
+)
 from bot.utils.config import BOT_TOKEN, validate_config
 
 
@@ -23,7 +28,6 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not configured.")
 
-    # Test Supabase connection
     response = (
         supabase
         .table("stages")
@@ -65,6 +69,27 @@ def main():
         CallbackQueryHandler(
             back_to_stages,
             pattern=r"^back_stages:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_files,
+            pattern=r"^content:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            file_button,
+            pattern=r"^file:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            back_to_content,
+            pattern=r"^back_content:"
         )
     )
 
