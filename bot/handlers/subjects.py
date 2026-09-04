@@ -1,3 +1,4 @@
+from bot.keyboards.content import content_keyboard
 from telegram import Update
 from telegram.ext import ContextTypes
 
