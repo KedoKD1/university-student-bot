@@ -5,21 +5,33 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
+
 from bot.handlers.stages import (
     locked_stage_button,
     show_stages,
     stage_button,
 )
+
 from bot.handlers.subjects import (
     back_to_stages,
     subject_button,
 )
+
 from bot.handlers.content import (
     back_to_content,
     file_button,
     show_files,
 )
-from bot.utils.config import BOT_TOKEN, validate_config
+
+from bot.handlers.admin import (
+    admin_button,
+    admin_command,
+)
+
+from bot.utils.config import (
+    BOT_TOKEN,
+    validate_config,
+)
 
 
 def main():
@@ -36,12 +48,29 @@ def main():
         .execute()
     )
 
-    print(f"Supabase connection successful: {response.data}")
+    print(
+        f"Supabase connection successful: {response.data}"
+    )
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = (
+        Application
+        .builder()
+        .token(BOT_TOKEN)
+        .build()
+    )
 
     application.add_handler(
-        CommandHandler("start", show_stages)
+        CommandHandler(
+            "start",
+            show_stages
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "admin",
+            admin_command
+        )
     )
 
     application.add_handler(
@@ -93,7 +122,16 @@ def main():
         )
     )
 
-    print("University Student Bot is running...")
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_button,
+            pattern=r"^admin_"
+        )
+    )
+
+    print(
+        "University Student Bot is running..."
+    )
 
     application.run_polling()
 
