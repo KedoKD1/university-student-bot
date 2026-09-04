@@ -53,6 +53,19 @@ def main():
         )
     )
 
+    application.add_handler(
+    CallbackQueryHandler(
+        subject_button,
+        pattern=r"^subject:"
+    )
+)
+
+application.add_handler(
+    CallbackQueryHandler(
+        back_to_stages,
+        pattern=r"^back_stages:"
+    )
+)
     print("University Student Bot is running...")
 
     application.run_polling()
