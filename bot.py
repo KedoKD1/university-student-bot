@@ -4,15 +4,15 @@ from telegram.ext import (
     CommandHandler,
 )
 
-from bot.handlers.subjects import (
-    back_to_stages,
-    subject_button,
-)
 from bot.database.client import supabase
 from bot.handlers.stages import (
     locked_stage_button,
     show_stages,
     stage_button,
+)
+from bot.handlers.subjects import (
+    back_to_stages,
+    subject_button,
 )
 from bot.utils.config import BOT_TOKEN, validate_config
 
@@ -23,6 +23,7 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not configured.")
 
+    # Test Supabase connection
     response = (
         supabase
         .table("stages")
@@ -54,18 +55,19 @@ def main():
     )
 
     application.add_handler(
-    CallbackQueryHandler(
-        subject_button,
-        pattern=r"^subject:"
+        CallbackQueryHandler(
+            subject_button,
+            pattern=r"^subject:"
+        )
     )
-)
 
-application.add_handler(
-    CallbackQueryHandler(
-        back_to_stages,
-        pattern=r"^back_stages:"
+    application.add_handler(
+        CallbackQueryHandler(
+            back_to_stages,
+            pattern=r"^back_stages:"
+        )
     )
-)
+
     print("University Student Bot is running...")
 
     application.run_polling()
