@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def stages_keyboard(stages):
+def stages_keyboard(stages, user_id):
     keyboard = []
 
     for stage in stages:
@@ -11,10 +11,10 @@ def stages_keyboard(stages):
 
         if is_active:
             text = f"📚 المرحلة {stage_number}"
-            callback_data = f"stage:{stage_id}"
+            callback_data = f"stage:{stage_id}:{user_id}"
         else:
             text = f"🔒 المرحلة {stage_number}"
-            callback_data = f"locked:{stage_id}"
+            callback_data = f"locked:{stage_id}:{user_id}"
 
         keyboard.append([
             InlineKeyboardButton(
