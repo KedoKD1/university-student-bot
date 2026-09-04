@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 from bot.keyboards.stages import stages_keyboard
+from bot.handlers.subjects import show_subjects
 
 
 async def show_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
