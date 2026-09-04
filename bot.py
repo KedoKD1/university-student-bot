@@ -5,18 +5,9 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from bot.database.client import test_database_connection
+from bot.database.client import supabase
+from bot.handlers.stages import show_stages
 from bot.utils.config import BOT_TOKEN, validate_config
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message is None:
-        return
-
-    await update.message.reply_text(
-        "🎓 مرحباً بك في بوت الطالب الجامعي\n\n"
-        "البوت يعمل حالياً."
-    )
 
 
 def main():
@@ -25,13 +16,21 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not configured.")
 
-    database_result = test_database_connection()
-    print(f"Supabase connection successful: {database_result}")
+    # Test Supabase connection
+    response = (
+        supabase
+        .table("stages")
+        .select("id")
+        .limit(1)
+        .execute()
+    )
+
+    print(f"Supabase connection successful: {response.data}")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(
-        CommandHandler("start", start)
+        CommandHandler("start", show_stages)
     )
 
     print("University Student Bot is running...")
