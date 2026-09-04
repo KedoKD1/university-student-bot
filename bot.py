@@ -1,13 +1,11 @@
-import os
-
-from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+)
 
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+from bot.utils.config import BOT_TOKEN, validate_config
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,6 +19,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    validate_config()
+
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not configured.")
 
