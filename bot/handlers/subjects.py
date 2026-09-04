@@ -1,10 +1,10 @@
-from bot.keyboards.content import content_keyboard
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 from bot.keyboards.subjects import subjects_keyboard
 from bot.keyboards.stages import stages_keyboard
+from bot.keyboards.content import content_keyboard
 
 
 async def show_subjects(
@@ -99,12 +99,19 @@ async def subject_button(
         )
         return
 
-    description = subject.get("description") or "لا يوجد وصف للمادة حالياً."
+    description = (
+        subject.get("description")
+        or "لا يوجد وصف للمادة حالياً."
+    )
 
     await query.edit_message_text(
         f"📘 {subject['name']}\n\n"
         f"{description}\n\n"
-        "اختر ما تريد:"
+        "اختر القسم:",
+        reply_markup=content_keyboard(
+            subject_id,
+            query.from_user.id
+        )
     )
 
 
