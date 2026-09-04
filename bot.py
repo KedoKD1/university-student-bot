@@ -4,6 +4,10 @@ from telegram.ext import (
     CommandHandler,
 )
 
+from bot.handlers.subjects import (
+    back_to_stages,
+    subject_button,
+)
 from bot.database.client import supabase
 from bot.handlers.stages import (
     locked_stage_button,
