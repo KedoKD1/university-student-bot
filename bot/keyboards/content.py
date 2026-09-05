@@ -4,25 +4,19 @@ def content_keyboard(subject_id, user_id, stage_id):
         [
             InlineKeyboardButton(
                 text="📖 النظري",
-                callback_data=(
-                    f"content:theory:{subject_id}:{user_id}"
-                )
+                callback_data=f"content:theory:{subject_id}:{user_id}"
             )
         ],
         [
             InlineKeyboardButton(
                 text="🧪 العملي",
-                callback_data=(
-                    f"content:practical:{subject_id}:{user_id}"
-                )
+                callback_data=f"content:practical:{subject_id}:{user_id}"
             )
         ],
         [
             InlineKeyboardButton(
                 text="⬅️ رجوع للمواد",
-                callback_data=(
-                    f"back_subjects:{stage_id}:{user_id}"
-                )
+                callback_data=f"back_subjects:{stage_id}:{user_id}"
             )
         ],
     ])
