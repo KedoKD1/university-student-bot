@@ -82,6 +82,32 @@ async def admin_command(
     )
 
 
+async def admin_back(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await is_admin(query.from_user.id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True
+        )
+        return
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "🛠️ لوحة الإدارة\n\n"
+        "أهلاً بك في لوحة إدارة بوت الطالب الجامعي.\n"
+        "اختر القسم الذي تريد إدارته:",
+        reply_markup=admin_keyboard()
+    )
+
+
 async def admin_button(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -102,13 +128,7 @@ async def admin_button(
 
     await query.answer()
 
-    if query.data == "admin_subjects":
-        await query.edit_message_text(
-            "📚 إدارة المواد\n\n"
-            "هذا القسم قيد الإنشاء."
-        )
-
-    elif query.data == "admin_files":
+    if query.data == "admin_files":
         await query.edit_message_text(
             "📄 إدارة الملفات\n\n"
             "هذا القسم قيد الإنشاء."
