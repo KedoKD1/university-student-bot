@@ -35,7 +35,9 @@ def subjects_admin_keyboard(subjects, stage_id):
         keyboard.append([
             InlineKeyboardButton(
                 text=f"{status} {subject['name']}",
-                callback_data=f"manage_subject:{subject['id']}:{stage_id}"
+                callback_data=(
+                    f"manage_subject:{subject['id']}:{stage_id}"
+                )
             )
         ])
 
@@ -56,24 +58,43 @@ def subjects_admin_keyboard(subjects, stage_id):
     return InlineKeyboardMarkup(keyboard)
 
 
-def subject_manage_keyboard(subject_id, stage_id):
+def subject_manage_keyboard(
+    subject_id,
+    stage_id,
+    is_active
+):
+    if is_active:
+        toggle_text = "🔴 تعطيل المادة"
+        toggle_callback = (
+            f"disable_subject:{subject_id}:{stage_id}"
+        )
+    else:
+        toggle_text = "🟢 تفعيل المادة"
+        toggle_callback = (
+            f"enable_subject:{subject_id}:{stage_id}"
+        )
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="✏️ تعديل المادة",
-                callback_data=f"edit_subject:{subject_id}:{stage_id}"
+                callback_data=(
+                    f"edit_subject:{subject_id}:{stage_id}"
+                )
             )
         ],
         [
             InlineKeyboardButton(
-                text="🗑️ تعطيل المادة",
-                callback_data=f"delete_subject:{subject_id}:{stage_id}"
+                text=toggle_text,
+                callback_data=toggle_callback
             )
         ],
         [
             InlineKeyboardButton(
                 text="⬅️ رجوع للمواد",
-                callback_data=f"manage_stage:{stage_id}"
+                callback_data=(
+                    f"manage_stage:{stage_id}"
+                )
             )
         ],
     ])
@@ -237,14 +258,35 @@ async def manage_subject(
         f"الحالة: {status}",
         reply_markup=subject_manage_keyboard(
             subject_id,
-            stage_id
+            stage_id,
+            subject["is_active"]
         )
     )
 
 
-async def delete_subject(
+async def disable_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
+):
+    await set_subject_status(
+        update,
+        active=False
+    )
+
+
+async def enable_subject(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    await set_subject_status(
+        update,
+        active=True
+    )
+
+
+async def set_subject_status(
+    update: Update,
+    active: bool,
 ):
     query = update.callback_query
 
@@ -270,26 +312,57 @@ async def delete_subject(
     subject_id = parts[1]
     stage_id = parts[2]
 
+    (
+        supabase
+        .table("subjects")
+        .update({"is_active": active})
+        .eq("id", subject_id)
+        .execute()
+    )
+
     await query.answer(
-        "⚠️ سيتم تعطيل المادة.",
+        "✅ تم تفعيل المادة."
+        if active
+        else "✅ تم تعطيل المادة.",
         show_alert=True
     )
 
-    supabase \
-        .table("subjects") \
-        .update({"is_active": False}) \
-        .eq("id", subject_id) \
+    response = (
+        supabase
+        .table("subjects")
+        .select("*")
+        .eq("id", subject_id)
+        .single()
         .execute()
+    )
+
+    subject = response.data
+
+    if not subject:
+        await query.edit_message_text(
+            "❌ المادة غير موجودة."
+        )
+        return
+
+    status = (
+        "🟢 مفعّلة"
+        if subject["is_active"]
+        else "🔴 معطّلة"
+    )
+
+    description = (
+        subject.get("description")
+        or "لا يوجد وصف."
+    )
 
     await query.edit_message_text(
-        "✅ تم تعطيل المادة بنجاح.\n\n"
-        "يمكنك العودة لقائمة المواد.",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    text="⬅️ رجوع للمواد",
-                    callback_data=f"manage_stage:{stage_id}"
-                )
-            ]
-        ])
+        f"📘 {subject['name']}\n\n"
+        f"الوصف:\n{description}\n\n"
+        f"الترتيب: {subject['sort_order']}\n"
+        f"الحالة: {status}",
+        reply_markup=subject_manage_keyboard(
+            subject_id,
+            stage_id,
+            subject["is_active"]
+        )
     )
