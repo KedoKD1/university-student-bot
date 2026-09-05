@@ -92,9 +92,7 @@ def subject_manage_keyboard(
         [
             InlineKeyboardButton(
                 text="⬅️ رجوع للمواد",
-                callback_data=(
-                    f"manage_stage:{stage_id}"
-                )
+                callback_data=f"manage_stage:{stage_id}"
             )
         ],
     ])
