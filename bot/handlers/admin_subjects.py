@@ -1,13 +1,17 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
-
+from telegram.ext import ContextTypes, ConversationHandler
 from bot.database.client import supabase
 from bot.handlers.admin import is_admin
-
-
+# =========================
+# Conversation States
+# =========================
+ADD_NAME, ADD_DESCRIPTION, ADD_ORDER = range(3)
+EDIT_NAME, EDIT_DESCRIPTION, EDIT_ORDER = range(3, 6)
+# =========================
+# Keyboards
+# =========================
 def stages_admin_keyboard(stages):
     keyboard = []
-
     for stage in stages:
         keyboard.append([
             InlineKeyboardButton(
@@ -15,23 +19,17 @@ def stages_admin_keyboard(stages):
                 callback_data=f"manage_stage:{stage['id']}"
             )
         ])
-
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للوحة الإدارة",
             callback_data="admin_back"
         )
     ])
-
     return InlineKeyboardMarkup(keyboard)
-
-
 def subjects_admin_keyboard(subjects, stage_id):
     keyboard = []
-
     for subject in subjects:
         status = "🟢" if subject["is_active"] else "🔴"
-
         keyboard.append([
             InlineKeyboardButton(
                 text=f"{status} {subject['name']}",
@@ -40,24 +38,19 @@ def subjects_admin_keyboard(subjects, stage_id):
                 )
             )
         ])
-
     keyboard.append([
         InlineKeyboardButton(
             text="➕ إضافة مادة",
             callback_data=f"add_subject:{stage_id}"
         )
     ])
-
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للمراحل",
             callback_data="admin_subjects"
         )
     ])
-
     return InlineKeyboardMarkup(keyboard)
-
-
 def subject_manage_keyboard(
     subject_id,
     stage_id,
@@ -73,7 +66,6 @@ def subject_manage_keyboard(
         toggle_callback = (
             f"enable_subject:{subject_id}:{stage_id}"
         )
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -98,26 +90,124 @@ def subject_manage_keyboard(
             )
         ],
     ])
-
-
+def after_save_keyboard(stage_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                text="⬅️ العودة إلى المواد",
+                callback_data=(
+                    f"admin_stage_subjects:{stage_id}"
+                )
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🛠️ لوحة الإدارة",
+                callback_data="admin_back"
+            )
+        ],
+    ])
+# =========================
+# Helpers
+# =========================
+def clear_subject_conversation(context):
+    keys = [
+        "admin_subject_stage_id",
+        "admin_subject_id",
+        "admin_subject_name",
+        "admin_subject_description",
+        "admin_subject_order",
+    ]
+    for key in keys:
+        context.user_data.pop(key, None)
+def normalize_description(text):
+    text = text.strip()
+    if text in {"-", "لا يوجد", "بدون وصف", "بدون"}:
+        return None
+    return text
+async def send_subjects_list(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    stage_id,
+):
+    response = (
+        supabase
+        .table("subjects")
+        .select(
+            "id, name, description, sort_order, is_active"
+        )
+        .eq("stage_id", stage_id)
+        .order("sort_order")
+        .execute()
+    )
+    subjects = response.data or []
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "📚 مواد المرحلة\n\n"
+            "اختر المادة لإدارتها أو أضف مادة جديدة:"
+        ),
+        reply_markup=subjects_admin_keyboard(
+            subjects,
+            stage_id,
+        ),
+    )
+async def show_subject_details(
+    query,
+    subject_id,
+    stage_id,
+):
+    response = (
+        supabase
+        .table("subjects")
+        .select("*")
+        .eq("id", subject_id)
+        .single()
+        .execute()
+    )
+    subject = response.data
+    if not subject:
+        await query.edit_message_text(
+            "❌ المادة غير موجودة."
+        )
+        return
+    status = (
+        "🟢 مفعّلة"
+        if subject["is_active"]
+        else "🔴 معطّلة"
+    )
+    description = (
+        subject.get("description")
+        or "لا يوجد وصف."
+    )
+    await query.edit_message_text(
+        f"📘 {subject['name']}\n\n"
+        f"الوصف:\n{description}\n\n"
+        f"الترتيب: {subject['sort_order']}\n"
+        f"الحالة: {status}",
+        reply_markup=subject_manage_keyboard(
+            subject_id,
+            stage_id,
+            subject["is_active"],
+        ),
+    )
+# =========================
+# Main Admin Subjects
+# =========================
 async def admin_subjects(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
-
     if query is None or query.from_user is None:
         return
-
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
-
     await query.answer()
-
     response = (
         supabase
         .table("stages")
@@ -125,92 +215,69 @@ async def admin_subjects(
         .order("stage_number")
         .execute()
     )
-
-    stages = response.data
-
+    stages = response.data or []
     if not stages:
         await query.edit_message_text(
             "❌ لا توجد مراحل في قاعدة البيانات."
         )
         return
-
     await query.edit_message_text(
         "📚 إدارة المواد\n\n"
         "اختر المرحلة:",
         reply_markup=stages_admin_keyboard(stages),
     )
-
-
 async def manage_stage(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
-
     if query is None or query.from_user is None:
         return
-
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
-
     parts = query.data.split(":")
-
     if len(parts) != 2:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
-
     stage_id = parts[1]
-
     await query.answer()
-
     await show_stage_subjects(
         query,
         stage_id,
     )
-
-
 async def back_to_stage_subjects(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
-
     if query is None or query.from_user is None:
         return
-
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
-
     parts = query.data.split(":")
-
     if len(parts) != 2:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
-
     stage_id = parts[1]
-
     await query.answer()
-
     await show_stage_subjects(
         query,
         stage_id,
     )
-
-
 async def show_stage_subjects(
     query,
     stage_id,
@@ -225,9 +292,7 @@ async def show_stage_subjects(
         .order("sort_order")
         .execute()
     )
-
-    subjects = response.data
-
+    subjects = response.data or []
     await query.edit_message_text(
         "📚 مواد المرحلة\n\n"
         "اختر المادة لإدارتها أو أضف مادة جديدة:",
@@ -236,79 +301,495 @@ async def show_stage_subjects(
             stage_id,
         ),
     )
-
-
+# =========================
+# Manage Subject
+# =========================
 async def manage_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
-
     if query is None or query.from_user is None:
         return
-
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
-
     parts = query.data.split(":")
-
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
-
     subject_id = parts[1]
     stage_id = parts[2]
-
     await query.answer()
-
+    await show_subject_details(
+        query,
+        subject_id,
+        stage_id,
+    )
+# =========================
+# Add Subject
+# =========================
+async def start_add_subject(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    if query is None or query.from_user is None:
+        return ConversationHandler.END
+    if not await is_admin(query.from_user.id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+    parts = query.data.split(":")
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+    stage_id = parts[1]
+    clear_subject_conversation(context)
+    context.user_data["admin_subject_stage_id"] = stage_id
+    await query.answer()
+    await query.edit_message_text(
+        "➕ إضافة مادة جديدة\n\n"
+        "أرسل اسم المادة:\n\n"
+        "للإلغاء استخدم /cancel"
+    )
+    return ADD_NAME
+async def receive_add_name(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    name = update.message.text.strip()
+    if not name:
+        await update.message.reply_text(
+            "❌ اسم المادة لا يمكن أن يكون فارغاً.\n\n"
+            "أرسل اسم المادة مرة أخرى:"
+        )
+        return ADD_NAME
+    stage_id = context.user_data.get(
+        "admin_subject_stage_id"
+    )
+    if not stage_id:
+        await update.message.reply_text(
+            "❌ انتهت عملية الإضافة. ابدأ من لوحة الإدارة مرة أخرى."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    duplicate_response = (
+        supabase
+        .table("subjects")
+        .select("id")
+        .eq("stage_id", stage_id)
+        .eq("name", name)
+        .limit(1)
+        .execute()
+    )
+    if duplicate_response.data:
+        await update.message.reply_text(
+            "⚠️ توجد مادة بهذا الاسم في هذه المرحلة بالفعل.\n\n"
+            "أرسل اسم مادة مختلف:"
+        )
+        return ADD_NAME
+    context.user_data["admin_subject_name"] = name
+    await update.message.reply_text(
+        "📝 ممتاز.\n\n"
+        "أرسل وصف المادة.\n"
+        "إذا ما تريد وصف، أرسل: -"
+    )
+    return ADD_DESCRIPTION
+async def receive_add_description(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    description = normalize_description(
+        update.message.text
+    )
+    context.user_data["admin_subject_description"] = (
+        description
+    )
+    await update.message.reply_text(
+        "🔢 أرسل ترتيب المادة.\n\n"
+        "مثال: 1"
+    )
+    return ADD_ORDER
+async def receive_add_order(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    text = update.message.text.strip()
+    try:
+        sort_order = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ الترتيب يجب أن يكون رقماً صحيحاً.\n\n"
+            "أرسل الترتيب مرة أخرى:"
+        )
+        return ADD_ORDER
+    if sort_order < 1:
+        await update.message.reply_text(
+            "❌ الترتيب يجب أن يكون 1 أو أكبر.\n\n"
+            "أرسل الترتيب مرة أخرى:"
+        )
+        return ADD_ORDER
+    stage_id = context.user_data.get(
+        "admin_subject_stage_id"
+    )
+    name = context.user_data.get(
+        "admin_subject_name"
+    )
+    description = context.user_data.get(
+        "admin_subject_description"
+    )
+    if not stage_id or not name:
+        await update.message.reply_text(
+            "❌ انتهت عملية الإضافة. ابدأ من لوحة الإدارة مرة أخرى."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    try:
+        supabase.table("subjects").insert({
+            "stage_id": stage_id,
+            "name": name,
+            "description": description,
+            "sort_order": sort_order,
+            "is_active": True,
+        }).execute()
+    except Exception:
+        await update.message.reply_text(
+            "❌ حدث خطأ أثناء إضافة المادة.\n"
+            "لم يتم حفظ المادة."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "✅ تمت إضافة المادة بنجاح.\n\n"
+        f"📘 المادة: {name}\n"
+        f"🔢 الترتيب: {sort_order}",
+        reply_markup=after_save_keyboard(stage_id),
+    )
+    clear_subject_conversation(context)
+    return ConversationHandler.END
+# =========================
+# Edit Subject
+# =========================
+async def start_edit_subject(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+    if query is None or query.from_user is None:
+        return ConversationHandler.END
+    if not await is_admin(query.from_user.id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+    parts = query.data.split(":")
+    if len(parts) != 3:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+    subject_id = parts[1]
+    stage_id = parts[2]
     response = (
         supabase
         .table("subjects")
         .select("*")
         .eq("id", subject_id)
-        .single()
+        .eq("stage_id", stage_id)
+        .limit(1)
         .execute()
     )
-
-    subject = response.data
-
-    if not subject:
-        await query.edit_message_text(
-            "❌ المادة غير موجودة."
+    if not response.data:
+        await query.answer(
+            "❌ المادة غير موجودة.",
+            show_alert=True,
         )
-        return
-
-    status = (
-        "🟢 مفعّلة"
-        if subject["is_active"]
-        else "🔴 معطّلة"
-    )
-
-    description = (
-        subject.get("description")
-        or "لا يوجد وصف."
-    )
-
+        return ConversationHandler.END
+    subject = response.data[0]
+    clear_subject_conversation(context)
+    context.user_data["admin_subject_stage_id"] = stage_id
+    context.user_data["admin_subject_id"] = subject_id
+    await query.answer()
     await query.edit_message_text(
-        f"📘 {subject['name']}\n\n"
-        f"الوصف:\n{description}\n\n"
-        f"الترتيب: {subject['sort_order']}\n"
-        f"الحالة: {status}",
-        reply_markup=subject_manage_keyboard(
-            subject_id,
-            stage_id,
-            subject["is_active"],
-        ),
+        "✏️ تعديل المادة\n\n"
+        f"الاسم الحالي: {subject['name']}\n\n"
+        "أرسل الاسم الجديد:"
+        "\n\nللإلغاء استخدم /cancel"
     )
-
-
+    return EDIT_NAME
+async def receive_edit_name(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    name = update.message.text.strip()
+    if not name:
+        await update.message.reply_text(
+            "❌ اسم المادة لا يمكن أن يكون فارغاً.\n\n"
+            "أرسل الاسم الجديد:"
+        )
+        return EDIT_NAME
+    stage_id = context.user_data.get(
+        "admin_subject_stage_id"
+    )
+    subject_id = context.user_data.get(
+        "admin_subject_id"
+    )
+    if not stage_id or not subject_id:
+        await update.message.reply_text(
+            "❌ انتهت عملية التعديل. ابدأ من لوحة الإدارة مرة أخرى."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    duplicate_response = (
+        supabase
+        .table("subjects")
+        .select("id")
+        .eq("stage_id", stage_id)
+        .eq("name", name)
+        .neq("id", subject_id)
+        .limit(1)
+        .execute()
+    )
+    if duplicate_response.data:
+        await update.message.reply_text(
+            "⚠️ توجد مادة أخرى بهذا الاسم في نفس المرحلة.\n\n"
+            "أرسل اسماً مختلفاً:"
+        )
+        return EDIT_NAME
+    context.user_data["admin_subject_name"] = name
+    await update.message.reply_text(
+        "📝 أرسل الوصف الجديد.\n"
+        "إذا ما تريد وصف، أرسل: -"
+    )
+    return EDIT_DESCRIPTION
+async def receive_edit_description(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    description = normalize_description(
+        update.message.text
+    )
+    context.user_data["admin_subject_description"] = (
+        description
+    )
+    await update.message.reply_text(
+        "🔢 أرسل ترتيب المادة الجديد.\n\n"
+        "مثال: 1"
+    )
+    return EDIT_ORDER
+async def receive_edit_order(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if update.effective_user is None or update.message is None:
+        return ConversationHandler.END
+    if not await is_admin(update.effective_user.id):
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    text = update.message.text.strip()
+    try:
+        sort_order = int(text)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ الترتيب يجب أن يكون رقماً صحيحاً.\n\n"
+            "أرسل الترتيب مرة أخرى:"
+        )
+        return EDIT_ORDER
+    if sort_order < 1:
+        await update.message.reply_text(
+            "❌ الترتيب يجب أن يكون 1 أو أكبر.\n\n"
+            "أرسل الترتيب مرة أخرى:"
+        )
+        return EDIT_ORDER
+    stage_id = context.user_data.get(
+        "admin_subject_stage_id"
+    )
+    subject_id = context.user_data.get(
+        "admin_subject_id"
+    )
+    name = context.user_data.get(
+        "admin_subject_name"
+    )
+    description = context.user_data.get(
+        "admin_subject_description"
+    )
+    if not stage_id or not subject_id or not name:
+        await update.message.reply_text(
+            "❌ انتهت عملية التعديل. ابدأ من لوحة الإدارة مرة أخرى."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    try:
+        supabase.table("subjects").update({
+            "name": name,
+            "description": description,
+            "sort_order": sort_order,
+        }).eq(
+            "id",
+            subject_id,
+        ).execute()
+    except Exception:
+        await update.message.reply_text(
+            "❌ حدث خطأ أثناء تعديل المادة.\n"
+            "لم يتم حفظ التعديلات."
+        )
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "✅ تم تعديل المادة بنجاح.\n\n"
+        f"📘 المادة: {name}\n"
+        f"🔢 الترتيب: {sort_order}",
+        reply_markup=after_save_keyboard(stage_id),
+    )
+    clear_subject_conversation(context)
+    return ConversationHandler.END
+# =========================
+# Cancel
+# =========================
+async def cancel_subject_operation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    clear_subject_conversation(context)
+    if update.message is not None:
+        await update.message.reply_text(
+            "↩️ تم إلغاء العملية."
+        )
+    return ConversationHandler.END
+# =========================
+# Subject Conversation Handler
+# =========================
+def subject_conversation_handler():
+    return ConversationHandler(
+        entry_points=[
+            # إضافة مادة
+            # callback: add_subject:<stage_id>
+            __import__("telegram.ext", fromlist=["CallbackQueryHandler"])
+            .CallbackQueryHandler(
+                start_add_subject,
+                pattern=r"^add_subject:",
+            ),
+            # تعديل مادة
+            # callback: edit_subject:<subject_id>:<stage_id>
+            __import__("telegram.ext", fromlist=["CallbackQueryHandler"])
+            .CallbackQueryHandler(
+                start_edit_subject,
+                pattern=r"^edit_subject:",
+            ),
+        ],
+        states={
+            ADD_NAME: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_add_name,
+                )
+            ],
+            ADD_DESCRIPTION: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_add_description,
+                )
+            ],
+            ADD_ORDER: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_add_order,
+                )
+            ],
+            EDIT_NAME: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_edit_name,
+                )
+            ],
+            EDIT_DESCRIPTION: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_edit_description,
+                )
+            ],
+            EDIT_ORDER: [
+                __import__("telegram.ext", fromlist=["MessageHandler"])
+                .MessageHandler(
+                    __import__("telegram.ext", fromlist=["filters"])
+                    .filters.TEXT
+                    & ~__import__("telegram.ext", fromlist=["filters"])
+                    .filters.COMMAND,
+                    receive_edit_order,
+                )
+            ],
+        },
+        fallbacks=[
+            __import__("telegram.ext", fromlist=["CommandHandler"])
+            .CommandHandler(
+                "cancel",
+                cancel_subject_operation,
+            )
+        ],
+        allow_reentry=True,
+    )
+# =========================
+# Enable / Disable Subject
+# =========================
 async def disable_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -317,8 +798,6 @@ async def disable_subject(
         update,
         active=False,
     )
-
-
 async def enable_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -327,36 +806,28 @@ async def enable_subject(
         update,
         active=True,
     )
-
-
 async def set_subject_status(
     update: Update,
     active: bool,
 ):
     query = update.callback_query
-
     if query is None or query.from_user is None:
         return
-
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
-
     parts = query.data.split(":")
-
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
-
     subject_id = parts[1]
     stage_id = parts[2]
-
     (
         supabase
         .table("subjects")
@@ -364,50 +835,14 @@ async def set_subject_status(
         .eq("id", subject_id)
         .execute()
     )
-
     await query.answer(
         "✅ تم تفعيل المادة."
         if active
         else "✅ تم تعطيل المادة.",
         show_alert=True,
     )
-
-    response = (
-        supabase
-        .table("subjects")
-        .select("*")
-        .eq("id", subject_id)
-        .single()
-        .execute()
-    )
-
-    subject = response.data
-
-    if not subject:
-        await query.edit_message_text(
-            "❌ المادة غير موجودة."
-        )
-        return
-
-    status = (
-        "🟢 مفعّلة"
-        if subject["is_active"]
-        else "🔴 معطّلة"
-    )
-
-    description = (
-        subject.get("description")
-        or "لا يوجد وصف."
-    )
-
-    await query.edit_message_text(
-        f"📘 {subject['name']}\n\n"
-        f"الوصف:\n{description}\n\n"
-        f"الترتيب: {subject['sort_order']}\n"
-        f"الحالة: {status}",
-        reply_markup=subject_manage_keyboard(
-            subject_id,
-            stage_id,
-            subject["is_active"],
-        ),
+    await show_subject_details(
+        query,
+        subject_id,
+        stage_id,
     )
