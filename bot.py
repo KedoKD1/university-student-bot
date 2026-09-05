@@ -11,6 +11,7 @@ from bot.handlers.stages import (
 )
 from bot.handlers.subjects import (
     back_to_stages,
+    back_to_subjects,
     subject_button,
 )
 from bot.handlers.content import (
@@ -36,13 +37,11 @@ from bot.utils.config import (
     validate_config,
 )
 def main():
-    # Validate configuration
     validate_config()
     if not BOT_TOKEN:
         raise ValueError(
             "BOT_TOKEN is not configured."
         )
-    # Test Supabase connection
     response = (
         supabase
         .table("stages")
@@ -54,7 +53,6 @@ def main():
         f"Supabase connection successful: "
         f"{response.data}"
     )
-    # Create Telegram application
     application = (
         Application
         .builder()
@@ -77,7 +75,7 @@ def main():
         )
     )
     # =========================
-    # Stage handlers
+    # Stages
     # =========================
     application.add_handler(
         CallbackQueryHandler(
@@ -92,7 +90,7 @@ def main():
         )
     )
     # =========================
-    # Subject handlers
+    # Subjects
     # =========================
     application.add_handler(
         CallbackQueryHandler(
@@ -102,12 +100,18 @@ def main():
     )
     application.add_handler(
         CallbackQueryHandler(
+            back_to_subjects,
+            pattern=r"^back_subjects:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
             back_to_stages,
             pattern=r"^back_stages:",
         )
     )
     # =========================
-    # Content handlers
+    # Content
     # =========================
     application.add_handler(
         CallbackQueryHandler(
@@ -128,7 +132,7 @@ def main():
         )
     )
     # =========================
-    # Admin subjects handlers
+    # Admin Subjects
     # =========================
     application.add_handler(
         CallbackQueryHandler(
@@ -167,7 +171,7 @@ def main():
         )
     )
     # =========================
-    # Admin navigation
+    # Admin Navigation
     # =========================
     application.add_handler(
         CallbackQueryHandler(
@@ -181,9 +185,6 @@ def main():
             pattern=r"^admin_(?!subjects$|back$|stage_subjects:)",
         )
     )
-    # =========================
-    # Start bot
-    # =========================
     print(
         "University Student Bot is running..."
     )
