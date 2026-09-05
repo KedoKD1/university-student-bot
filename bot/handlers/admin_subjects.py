@@ -61,7 +61,7 @@ def subjects_admin_keyboard(subjects, stage_id):
 def subject_manage_keyboard(
     subject_id,
     stage_id,
-    is_active
+    is_active,
 ):
     if is_active:
         toggle_text = "🔴 تعطيل المادة"
@@ -92,7 +92,9 @@ def subject_manage_keyboard(
         [
             InlineKeyboardButton(
                 text="⬅️ رجوع للمواد",
-                callback_data=f"manage_stage:{stage_id}"
+                callback_data=(
+                    f"admin_stage_subjects:{stage_id}"
+                )
             )
         ],
     ])
@@ -110,9 +112,11 @@ async def admin_subjects(
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
+    await query.answer()
 
     response = (
         supabase
@@ -124,8 +128,6 @@ async def admin_subjects(
 
     stages = response.data
 
-    await query.answer()
-
     if not stages:
         await query.edit_message_text(
             "❌ لا توجد مراحل في قاعدة البيانات."
@@ -135,7 +137,7 @@ async def admin_subjects(
     await query.edit_message_text(
         "📚 إدارة المواد\n\n"
         "اختر المرحلة:",
-        reply_markup=stages_admin_keyboard(stages)
+        reply_markup=stages_admin_keyboard(stages),
     )
 
 
@@ -151,7 +153,7 @@ async def manage_stage(
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -160,12 +162,59 @@ async def manage_stage(
     if len(parts) != 2:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
     stage_id = parts[1]
 
+    await query.answer()
+
+    await show_stage_subjects(
+        query,
+        stage_id,
+    )
+
+
+async def back_to_stage_subjects(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await is_admin(query.from_user.id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    stage_id = parts[1]
+
+    await query.answer()
+
+    await show_stage_subjects(
+        query,
+        stage_id,
+    )
+
+
+async def show_stage_subjects(
+    query,
+    stage_id,
+):
     response = (
         supabase
         .table("subjects")
@@ -179,15 +228,13 @@ async def manage_stage(
 
     subjects = response.data
 
-    await query.answer()
-
     await query.edit_message_text(
         "📚 مواد المرحلة\n\n"
         "اختر المادة لإدارتها أو أضف مادة جديدة:",
         reply_markup=subjects_admin_keyboard(
             subjects,
-            stage_id
-        )
+            stage_id,
+        ),
     )
 
 
@@ -203,7 +250,7 @@ async def manage_subject(
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -212,12 +259,14 @@ async def manage_subject(
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
     subject_id = parts[1]
     stage_id = parts[2]
+
+    await query.answer()
 
     response = (
         supabase
@@ -229,8 +278,6 @@ async def manage_subject(
     )
 
     subject = response.data
-
-    await query.answer()
 
     if not subject:
         await query.edit_message_text(
@@ -257,8 +304,8 @@ async def manage_subject(
         reply_markup=subject_manage_keyboard(
             subject_id,
             stage_id,
-            subject["is_active"]
-        )
+            subject["is_active"],
+        ),
     )
 
 
@@ -268,7 +315,7 @@ async def disable_subject(
 ):
     await set_subject_status(
         update,
-        active=False
+        active=False,
     )
 
 
@@ -278,7 +325,7 @@ async def enable_subject(
 ):
     await set_subject_status(
         update,
-        active=True
+        active=True,
     )
 
 
@@ -294,7 +341,7 @@ async def set_subject_status(
     if not await is_admin(query.from_user.id):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -303,7 +350,7 @@ async def set_subject_status(
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -322,7 +369,7 @@ async def set_subject_status(
         "✅ تم تفعيل المادة."
         if active
         else "✅ تم تعطيل المادة.",
-        show_alert=True
+        show_alert=True,
     )
 
     response = (
@@ -361,6 +408,6 @@ async def set_subject_status(
         reply_markup=subject_manage_keyboard(
             subject_id,
             stage_id,
-            subject["is_active"]
-        )
+            subject["is_active"],
+        ),
     )
