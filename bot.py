@@ -24,6 +24,7 @@ from bot.handlers.content import (
 )
 
 from bot.handlers.admin import (
+    admin_back,
     admin_button,
     admin_command,
 )
@@ -170,8 +171,15 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            admin_back,
+            pattern=r"^admin_back$"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             admin_button,
-            pattern=r"^admin_(?!subjects$)"
+            pattern=r"^admin_(?!subjects$|back$)"
         )
     )
 
