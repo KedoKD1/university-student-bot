@@ -31,6 +31,7 @@ from bot.handlers.admin_subjects import (
     enable_subject,
     manage_stage,
     manage_subject,
+    subject_conversation_handler,
 )
 from bot.utils.config import (
     BOT_TOKEN,
@@ -73,6 +74,17 @@ def main():
             "admin",
             admin_command,
         )
+    )
+    # =========================
+    # Admin Subject Conversation
+    # =========================
+    #
+    # يجب تسجيل ConversationHandler قبل
+    # الـ CallbackQueryHandlers العامة حتى
+    # يستلم أزرار الإضافة والتعديل بشكل صحيح.
+    #
+    application.add_handler(
+        subject_conversation_handler()
     )
     # =========================
     # Stages
@@ -185,6 +197,9 @@ def main():
             pattern=r"^admin_(?!subjects$|back$|stage_subjects:)",
         )
     )
+    # =========================
+    # Start Bot
+    # =========================
     print(
         "University Student Bot is running..."
     )
