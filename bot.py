@@ -30,7 +30,8 @@ from bot.handlers.admin import (
 
 from bot.handlers.admin_subjects import (
     admin_subjects,
-    delete_subject,
+    disable_subject,
+    enable_subject,
     manage_stage,
     manage_subject,
 )
@@ -155,8 +156,15 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
-            delete_subject,
-            pattern=r"^delete_subject:"
+            disable_subject,
+            pattern=r"^disable_subject:"
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_subject,
+            pattern=r"^enable_subject:"
         )
     )
 
