@@ -33,6 +33,20 @@ from bot.handlers.admin_subjects import (
     manage_subject,
     subject_conversation_handler,
 )
+from bot.handlers.admin_files import (
+    admin_files,
+    admin_file_stage,
+    admin_file_subject,
+    admin_file_sections,
+    admin_file_section,
+    admin_file_list,
+    manage_file,
+    disable_file,
+    enable_file,
+    delete_file,
+    confirm_delete_file,
+    file_conversation_handler,
+)
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
@@ -78,13 +92,14 @@ def main():
     # =========================
     # Admin Subject Conversation
     # =========================
-    #
-    # يجب تسجيل ConversationHandler قبل
-    # الـ CallbackQueryHandlers العامة حتى
-    # يستلم أزرار الإضافة والتعديل بشكل صحيح.
-    #
     application.add_handler(
         subject_conversation_handler()
+    )
+    # =========================
+    # Admin File Conversation
+    # =========================
+    application.add_handler(
+        file_conversation_handler()
     )
     # =========================
     # Stages
@@ -183,6 +198,75 @@ def main():
         )
     )
     # =========================
+    # Admin Files
+    # =========================
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_files,
+            pattern=r"^admin_files$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_file_stage,
+            pattern=r"^admin_file_stage:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_file_subject,
+            pattern=r"^admin_file_subject:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_file_sections,
+            pattern=r"^admin_file_sections:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_file_section,
+            pattern=r"^admin_file_section:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_file_list,
+            pattern=r"^admin_file_list:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_file,
+            pattern=r"^manage_file:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            disable_file,
+            pattern=r"^disable_file:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_file,
+            pattern=r"^enable_file:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_file,
+            pattern=r"^delete_file:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            confirm_delete_file,
+            pattern=r"^confirm_delete_file:",
+        )
+    )
+    # =========================
     # Admin Navigation
     # =========================
     application.add_handler(
@@ -194,7 +278,7 @@ def main():
     application.add_handler(
         CallbackQueryHandler(
             admin_button,
-            pattern=r"^admin_(?!subjects$|back$|stage_subjects:)",
+            pattern=r"^admin_(?!subjects$|back$|files$|stage_subjects:|file_)",
         )
     )
     # =========================
