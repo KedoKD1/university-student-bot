@@ -6,11 +6,17 @@ from bot.keyboards.stages import stages_keyboard
 from bot.handlers.subjects import show_subjects
 
 
-async def show_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message is None or update.effective_user is None:
+async def show_stages(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    edit_message=False,
+):
+    user = update.effective_user
+
+    if user is None:
         return
 
-    user_id = update.effective_user.id
+    user_id = user.id
 
     response = (
         supabase
@@ -20,16 +26,37 @@ async def show_stages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         .execute()
     )
 
-    stages = response.data
+    stages = response.data or []
 
-    await update.message.reply_text(
-        "🎓 أهلاً بك في بوت الطالب الجامعي\n\n"
-        "اختر المرحلة الدراسية:",
-        reply_markup=stages_keyboard(stages, user_id)
+    text = (
+        "🎓 المراحل الدراسية\n\n"
+        "اختر المرحلة الدراسية:"
     )
 
+    if edit_message and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=stages_keyboard(
+                stages,
+                user_id,
+            ),
+        )
+        return
 
-async def stage_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text(
+            text,
+            reply_markup=stages_keyboard(
+                stages,
+                user_id,
+            ),
+        )
+
+
+async def stage_button(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     query = update.callback_query
 
     if query is None or query.from_user is None:
@@ -38,18 +65,20 @@ async def stage_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = query.data.split(":")
 
     if len(parts) != 3:
-        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
         return
 
     stage_id = parts[1]
     owner_id = parts[2]
-    current_user_id = str(query.from_user.id)
 
-    if current_user_id != owner_id:
+    if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.\n"
             "استخدم /start حتى تحصل على قائمتك الخاصة.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -60,35 +89,37 @@ async def stage_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         .table("stages")
         .select("*")
         .eq("id", stage_id)
-        .single()
+        .limit(1)
         .execute()
     )
 
-    stage = response.data
+    stages = response.data or []
 
-    if not stage:
+    if not stages:
         await query.edit_message_text(
             "❌ تعذر العثور على هذه المرحلة."
         )
         return
 
+    stage = stages[0]
+
     if not stage["is_active"]:
         await query.answer(
             "🔒 هذه المرحلة غير متاحة حالياً.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
     await show_subjects(
-    update,
-    context,
-    stage_id
-)
+        update,
+        context,
+        stage_id,
+    )
 
 
 async def locked_stage_button(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE
+    context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
 
@@ -98,21 +129,23 @@ async def locked_stage_button(
     parts = query.data.split(":")
 
     if len(parts) != 3:
-        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
         return
 
     owner_id = parts[2]
-    current_user_id = str(query.from_user.id)
 
-    if current_user_id != owner_id:
+    if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.\n"
             "استخدم /start حتى تحصل على قائمتك الخاصة.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
     await query.answer(
         "🔒 هذه المرحلة غير متاحة حالياً.",
-        show_alert=True
+        show_alert=True,
     )
