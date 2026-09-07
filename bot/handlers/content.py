@@ -1,24 +1,36 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import ContextTypes
+
 from bot.database.client import supabase
 from bot.keyboards.content import content_keyboard
+
+
 async def show_files(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 4:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True
         )
         return
+
     section_type = parts[1]
     subject_id = parts[2]
     owner_id = parts[3]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.\n"
@@ -26,13 +38,16 @@ async def show_files(
             show_alert=True
         )
         return
-    if section_type not in ("theory", "practical"):
+
+    if section_type not in ("theoretical", "practical"):
         await query.answer(
             "❌ نوع القسم غير صالح.",
             show_alert=True
         )
         return
+
     await query.answer()
+
     response = (
         supabase
         .table("files")
@@ -40,15 +55,19 @@ async def show_files(
         .eq("subject_id", subject_id)
         .eq("section_type", section_type)
         .eq("is_active", True)
+        .is_("deleted_at", "null")
         .order("sort_order")
         .execute()
     )
-    files = response.data
+
+    files = response.data or []
+
     section_name = (
         "📖 النظري"
-        if section_type == "theory"
+        if section_type == "theoretical"
         else "🧪 العملي"
     )
+
     if not files:
         await query.edit_message_text(
             f"{section_name}\n\n"
@@ -58,14 +77,17 @@ async def show_files(
                     InlineKeyboardButton(
                         text="⬅️ رجوع للمادة",
                         callback_data=(
-                            f"back_content:{subject_id}:{owner_id}"
+                            f"back_content:"
+                            f"{subject_id}:{owner_id}"
                         )
                     )
                 ]
             ])
         )
         return
+
     keyboard = []
+
     for file in files:
         keyboard.append([
             InlineKeyboardButton(
@@ -75,117 +97,175 @@ async def show_files(
                 )
             )
         ])
+
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للمادة",
             callback_data=(
-                f"back_content:{subject_id}:{owner_id}"
+                f"back_content:"
+                f"{subject_id}:{owner_id}"
             )
         )
     ])
+
     await query.edit_message_text(
         f"{section_name}\n\n"
         "اختر الملف:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
 async def file_button(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True
         )
         return
+
     file_id = parts[1]
     owner_id = parts[2]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True
         )
         return
+
     await query.answer()
+
     response = (
         supabase
         .table("files")
         .select("*")
         .eq("id", file_id)
         .eq("is_active", True)
-        .single()
+        .is_("deleted_at", "null")
+        .limit(1)
         .execute()
     )
-    file = response.data
-    if not file:
+
+    files = response.data or []
+
+    if not files:
         await query.message.reply_text(
             "❌ الملف غير موجود."
         )
         return
+
+    file = files[0]
+
     telegram_file_id = file.get("telegram_file_id")
+
     if not telegram_file_id:
         await query.message.reply_text(
             "⚠️ هذا الملف لم يتم ربطه بملف Telegram بعد."
         )
         return
-    await query.message.reply_document(
-        document=telegram_file_id,
-        caption=f"📄 {file['name']}"
-    )
+
+    file_type = file.get("file_type")
+
+    if file_type == "photo":
+        await query.message.reply_photo(
+            photo=telegram_file_id,
+            caption=f"🖼️ {file['name']}"
+        )
+
+    elif file_type == "video":
+        await query.message.reply_video(
+            video=telegram_file_id,
+            caption=f"🎥 {file['name']}"
+        )
+
+    elif file_type == "audio":
+        await query.message.reply_audio(
+            audio=telegram_file_id,
+            caption=f"🎵 {file['name']}"
+        )
+
+    else:
+        await query.message.reply_document(
+            document=telegram_file_id,
+            caption=f"📄 {file['name']}"
+        )
+
+
 async def back_to_content(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True
         )
         return
+
     subject_id = parts[1]
     owner_id = parts[2]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True
         )
         return
+
     response = (
         supabase
         .table("subjects")
         .select("*")
         .eq("id", subject_id)
         .eq("is_active", True)
-        .single()
+        .limit(1)
         .execute()
     )
-    subject = response.data
-    if not subject:
+
+    subjects = response.data or []
+
+    if not subjects:
         await query.answer(
             "❌ المادة غير موجودة.",
             show_alert=True
         )
         return
+
+    subject = subjects[0]
+
     stage_id = subject.get("stage_id")
+
     if stage_id is None:
         await query.answer(
             "❌ تعذر تحديد المرحلة الخاصة بالمادة.",
             show_alert=True
         )
         return
+
     await query.answer()
+
     description = (
         subject.get("description")
         or "لا يوجد وصف للمادة حالياً."
     )
+
     await query.edit_message_text(
         f"📘 {subject['name']}\n\n"
         f"{description}\n\n"
