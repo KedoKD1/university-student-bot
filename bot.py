@@ -58,6 +58,22 @@ from bot.handlers.admin_files import (
     file_conversation_handler,
 )
 
+from bot.handlers.admin_summaries import (
+    admin_summaries,
+    admin_summary_stage,
+    admin_summary_subject,
+    admin_summary_subjects,
+    admin_summary_sections,
+    admin_summary_section,
+    admin_summary_list,
+    manage_summary,
+    disable_summary,
+    enable_summary,
+    delete_summary,
+    confirm_delete_summary,
+    summary_conversation_handler,
+)
+
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
