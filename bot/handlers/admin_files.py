@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -34,6 +36,18 @@ FILE_TYPES = {
     "photo": "🖼️ صورة",
     "video": "🎥 فيديو",
     "audio": "🎵 صوت",
+}
+
+VALID_SECTION_TYPES = {
+    "theoretical",
+    "practical",
+}
+
+# دعم أزرار قديمة تم إنشاؤها قبل توحيد القيمة
+SECTION_TYPE_ALIASES = {
+    "theory": "theoretical",
+    "theoretical": "theoretical",
+    "practical": "practical",
 }
 
 
@@ -74,11 +88,53 @@ def normalize_description(text):
     return text
 
 
+def normalize_section_type(section_type):
+    return SECTION_TYPE_ALIASES.get(section_type)
+
+
 def section_name(section_type):
-    if section_type == "theory":
+    section_type = normalize_section_type(section_type)
+
+    if section_type == "theoretical":
         return "📖 النظري"
 
-    return "🧪 العملي"
+    if section_type == "practical":
+        return "🧪 العملي"
+
+    return "❓ غير محدد"
+
+
+def extract_telegram_file(message):
+    if message.document:
+        return (
+            "document",
+            message.document.file_id,
+            message.document.file_size,
+        )
+
+    if message.photo:
+        photo = message.photo[-1]
+        return (
+            "photo",
+            photo.file_id,
+            photo.file_size,
+        )
+
+    if message.video:
+        return (
+            "video",
+            message.video.file_id,
+            message.video.file_size,
+        )
+
+    if message.audio:
+        return (
+            "audio",
+            message.audio.file_id,
+            message.audio.file_size,
+        )
+
+    return None, None, None
 
 
 # =========================
@@ -91,7 +147,7 @@ def section_keyboard(stage_id, subject_id):
             InlineKeyboardButton(
                 text="📖 النظري",
                 callback_data=(
-                    f"admin_file_section:theory:"
+                    f"admin_file_section:theoretical:"
                     f"{subject_id}:{stage_id}"
                 ),
             )
@@ -122,6 +178,8 @@ def file_list_keyboard(
     subject_id,
     section_type,
 ):
+    section_type = normalize_section_type(section_type)
+
     keyboard = []
 
     for file in files:
@@ -151,7 +209,8 @@ def file_list_keyboard(
         InlineKeyboardButton(
             text="⬅️ رجوع للأقسام",
             callback_data=(
-                f"admin_file_sections:{stage_id}:{subject_id}"
+                f"admin_file_sections:"
+                f"{stage_id}:{subject_id}"
             ),
         )
     ])
@@ -166,6 +225,8 @@ def file_manage_keyboard(
     section_type,
     is_active,
 ):
+    section_type = normalize_section_type(section_type)
+
     if is_active:
         toggle_text = "🔴 تعطيل الملف"
         toggle_callback = (
@@ -222,6 +283,8 @@ def delete_confirm_keyboard(
     subject_id,
     section_type,
 ):
+    section_type = normalize_section_type(section_type)
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -247,6 +310,8 @@ def after_save_keyboard(
     subject_id,
     section_type,
 ):
+    section_type = normalize_section_type(section_type)
+
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -290,6 +355,11 @@ async def get_files(
     section_type,
     include_inactive=True,
 ):
+    section_type = normalize_section_type(section_type)
+
+    if section_type not in VALID_SECTION_TYPES:
+        return []
+
     query = (
         supabase
         .table("files")
@@ -400,6 +470,10 @@ async def admin_files(
     )
 
 
+# =========================
+# Stage → Subjects
+# =========================
+
 async def admin_file_stage(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -468,6 +542,10 @@ async def admin_file_stage(
     )
 
 
+# =========================
+# Subject → Sections
+# =========================
+
 async def admin_file_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -530,8 +608,7 @@ async def admin_file_subject(
 
 
 # =========================
-# FIX:
-# رجوع من الأقسام إلى المواد
+# Sections → Subjects
 # =========================
 
 async def admin_file_subjects(
@@ -602,6 +679,10 @@ async def admin_file_subjects(
     )
 
 
+# =========================
+# Subject → Sections
+# =========================
+
 async def admin_file_sections(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -650,9 +731,11 @@ async def admin_file_sections(
         )
         return
 
+    subject = subjects[0]
+
     await query.edit_message_text(
         f"📄 إدارة ملفات\n"
-        f"📘 {subjects[0]['name']}\n\n"
+        f"📘 {subject['name']}\n\n"
         "اختر القسم:",
         reply_markup=section_keyboard(
             stage_id,
@@ -660,6 +743,10 @@ async def admin_file_sections(
         ),
     )
 
+
+# =========================
+# Section → File List
+# =========================
 
 async def admin_file_section(
     update: Update,
@@ -686,14 +773,11 @@ async def admin_file_section(
         )
         return
 
-    section_type = parts[1]
+    section_type = normalize_section_type(parts[1])
     subject_id = parts[2]
     stage_id = parts[3]
 
-    if section_type not in {
-        "theory",
-        "practical",
-    }:
+    if section_type not in VALID_SECTION_TYPES:
         await query.answer(
             "❌ نوع القسم غير صالح.",
             show_alert=True,
@@ -702,13 +786,64 @@ async def admin_file_section(
 
     await query.answer()
 
-    await show_file_list(
-        query,
-        stage_id,
+    files = await get_files(
         subject_id,
         section_type,
+        include_inactive=True,
     )
 
+    response = (
+        supabase
+        .table("subjects")
+        .select("name")
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
+    if not subjects:
+        await query.edit_message_text(
+            "❌ المادة غير موجودة."
+        )
+        return
+
+    subject_name = subjects[0]["name"]
+
+    if not files:
+        await query.edit_message_text(
+            f"📄 إدارة الملفات\n"
+            f"📘 {subject_name}\n"
+            f"{section_name(section_type)}\n\n"
+            "لا توجد ملفات مضافة لهذا القسم.",
+            reply_markup=file_list_keyboard(
+                [],
+                stage_id,
+                subject_id,
+                section_type,
+            ),
+        )
+        return
+
+    await query.edit_message_text(
+        f"📄 إدارة الملفات\n"
+        f"📘 {subject_name}\n"
+        f"{section_name(section_type)}\n\n"
+        "اختر الملف:",
+        reply_markup=file_list_keyboard(
+            files,
+            stage_id,
+            subject_id,
+            section_type,
+        ),
+    )
+
+
+# =========================
+# File List
+# =========================
 
 async def admin_file_list(
     update: Update,
@@ -737,12 +872,9 @@ async def admin_file_list(
 
     stage_id = parts[1]
     subject_id = parts[2]
-    section_type = parts[3]
+    section_type = normalize_section_type(parts[3])
 
-    if section_type not in {
-        "theory",
-        "practical",
-    }:
+    if section_type not in VALID_SECTION_TYPES:
         await query.answer(
             "❌ نوع القسم غير صالح.",
             show_alert=True,
@@ -751,42 +883,37 @@ async def admin_file_list(
 
     await query.answer()
 
-    await show_file_list(
-        query,
-        stage_id,
-        subject_id,
-        section_type,
-    )
-
-
-async def show_file_list(
-    query,
-    stage_id,
-    subject_id,
-    section_type,
-):
     files = await get_files(
         subject_id,
         section_type,
         include_inactive=True,
     )
 
-    if files:
-        text = (
-            "📄 إدارة الملفات\n"
-            f"{section_name(section_type)}\n\n"
-            "اختر الملف لإدارته أو أضف ملفاً جديداً:"
+    response = (
+        supabase
+        .table("subjects")
+        .select("name")
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
+    if not subjects:
+        await query.edit_message_text(
+            "❌ المادة غير موجودة."
         )
-    else:
-        text = (
-            "📄 إدارة الملفات\n"
-            f"{section_name(section_type)}\n\n"
-            "لا توجد ملفات في هذا القسم حالياً.\n\n"
-            "يمكنك إضافة أول ملف:"
-        )
+        return
+
+    subject_name = subjects[0]["name"]
 
     await query.edit_message_text(
-        text,
+        f"📄 إدارة الملفات\n"
+        f"📘 {subject_name}\n"
+        f"{section_name(section_type)}\n\n"
+        "اختر الملف:",
         reply_markup=file_list_keyboard(
             files,
             stage_id,
@@ -827,9 +954,14 @@ async def manage_file(
 
     file_id = parts[1]
     subject_id = parts[2]
-    section_type = parts[3]
+    section_type = normalize_section_type(parts[3])
 
-    await query.answer()
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     file = await get_file(
         file_id,
@@ -837,15 +969,18 @@ async def manage_file(
     )
 
     if not file:
-        await query.edit_message_text(
-            "❌ الملف غير موجود."
+        await query.answer(
+            "❌ الملف غير موجود.",
+            show_alert=True,
         )
         return
+
+    await query.answer()
 
     stage_response = (
         supabase
         .table("subjects")
-        .select("stage_id")
+        .select("stage_id, name")
         .eq("id", subject_id)
         .limit(1)
         .execute()
@@ -855,15 +990,22 @@ async def manage_file(
 
     if not subjects:
         await query.edit_message_text(
-            "❌ تعذر تحديد المرحلة."
+            "❌ المادة غير موجودة."
         )
         return
 
     stage_id = subjects[0]["stage_id"]
+    subject_name = subjects[0]["name"]
 
     file_type = FILE_TYPES.get(
         file.get("file_type"),
         "📎 ملف",
+    )
+
+    status = (
+        "🟢 فعال"
+        if file.get("is_active")
+        else "🔴 معطل"
     )
 
     description = (
@@ -871,25 +1013,30 @@ async def manage_file(
         or "لا يوجد وصف."
     )
 
-    status = (
-        "🟢 مفعّل"
-        if file["is_active"]
-        else "🔴 معطّل"
-    )
+    file_size = file.get("file_size")
+
+    if file_size:
+        size_text = f"{file_size:,} بايت"
+    else:
+        size_text = "غير معروف"
 
     await query.edit_message_text(
-        f"📄 {file['name']}\n\n"
-        f"القسم: {section_name(section_type)}\n"
-        f"النوع: {file_type}\n"
-        f"الوصف:\n{description}\n\n"
-        f"الترتيب: {file['sort_order']}\n"
-        f"الحالة: {status}",
+        f"📄 إدارة الملف\n\n"
+        f"📘 المادة: {subject_name}\n"
+        f"{section_name(section_type)}\n\n"
+        f"📌 الاسم: {file['name']}\n"
+        f"📝 الوصف: {description}\n"
+        f"📎 النوع: {file_type}\n"
+        f"📦 الحجم: {size_text}\n"
+        f"🔢 الترتيب: {file.get('sort_order', 0)}\n"
+        f"📊 الحالة: {status}\n\n"
+        "اختر الإجراء:",
         reply_markup=file_manage_keyboard(
             file_id,
             stage_id,
             subject_id,
             section_type,
-            file["is_active"],
+            file.get("is_active", False),
         ),
     )
 
@@ -925,12 +1072,9 @@ async def start_add_file(
 
     stage_id = parts[1]
     subject_id = parts[2]
-    section_type = parts[3]
+    section_type = normalize_section_type(parts[3])
 
-    if section_type not in {
-        "theory",
-        "practical",
-    }:
+    if section_type not in VALID_SECTION_TYPES:
         await query.answer(
             "❌ نوع القسم غير صالح.",
             show_alert=True,
@@ -945,11 +1089,10 @@ async def start_add_file(
 
     await query.answer()
 
-    await query.edit_message_text(
+    await query.message.reply_text(
         "➕ إضافة ملف جديد\n\n"
-        f"القسم: {section_name(section_type)}\n\n"
-        "أرسل اسم الملف الذي سيظهر للطلاب:\n\n"
-        "للإلغاء استخدم /cancel"
+        f"{section_name(section_type)}\n\n"
+        "أرسل اسم الملف:"
     )
 
     return ADD_FILE_NAME
@@ -959,67 +1102,27 @@ async def receive_add_file_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
+    if message is None or message.text is None:
+        return ADD_FILE_NAME
 
-    name = normalize_text(
-        update.message.text
-    )
+    name = normalize_text(message.text)
 
     if not name:
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ اسم الملف لا يمكن أن يكون فارغاً.\n\n"
             "أرسل اسم الملف مرة أخرى:"
         )
         return ADD_FILE_NAME
 
-    subject_id = context.user_data.get(
-        "admin_file_subject_id"
-    )
-
-    section_type = context.user_data.get(
-        "admin_file_section_type"
-    )
-
-    if not subject_id or not section_type:
-        await update.message.reply_text(
-            "❌ انتهت عملية الإضافة.\n"
-            "ابدأ من لوحة إدارة الملفات مرة أخرى."
-        )
-        clear_file_conversation(context)
-        return ConversationHandler.END
-
-    response = (
-        supabase
-        .table("files")
-        .select("id")
-        .eq("subject_id", subject_id)
-        .eq("section_type", section_type)
-        .eq("name", name)
-        .is_("deleted_at", "null")
-        .limit(1)
-        .execute()
-    )
-
-    if response.data:
-        await update.message.reply_text(
-            "⚠️ يوجد ملف بهذا الاسم في نفس القسم.\n\n"
-            "أرسل اسماً مختلفاً:"
-        )
-        return ADD_FILE_NAME
-
     context.user_data["admin_file_name"] = name
 
-    await update.message.reply_text(
+    await message.reply_text(
         "📝 أرسل وصف الملف.\n\n"
-        "إذا ما تريد وصف، أرسل: -"
+        "إذا لا يوجد وصف، أرسل:\n"
+        "`-`",
+        parse_mode="Markdown",
     )
 
     return ADD_FILE_DESCRIPTION
@@ -1029,27 +1132,24 @@ async def receive_add_file_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
+    if message is None or message.text is None:
+        return ADD_FILE_DESCRIPTION
 
     description = normalize_description(
-        update.message.text
+        message.text
     )
 
-    context.user_data["admin_file_description"] = (
-        description
-    )
+    context.user_data[
+        "admin_file_description"
+    ] = description
 
-    await update.message.reply_text(
+    await message.reply_text(
         "🔢 أرسل ترتيب الملف.\n\n"
-        "مثال: 1"
+        "مثال:\n"
+        "`1`",
+        parse_mode="Markdown",
     )
 
     return ADD_FILE_ORDER
@@ -1059,44 +1159,38 @@ async def receive_add_file_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
+    if message is None or message.text is None:
+        return ADD_FILE_ORDER
 
-    text = update.message.text.strip()
+    text = normalize_text(message.text)
 
     try:
-        sort_order = int(text)
+        order = int(text)
     except ValueError:
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ الترتيب يجب أن يكون رقماً صحيحاً.\n\n"
             "أرسل الترتيب مرة أخرى:"
         )
         return ADD_FILE_ORDER
 
-    if sort_order < 1:
-        await update.message.reply_text(
-            "❌ الترتيب يجب أن يكون 1 أو أكبر.\n\n"
+    if order < 0:
+        await message.reply_text(
+            "❌ الترتيب لا يمكن أن يكون سالباً.\n\n"
             "أرسل الترتيب مرة أخرى:"
         )
         return ADD_FILE_ORDER
 
-    context.user_data["admin_file_order"] = sort_order
+    context.user_data["admin_file_order"] = order
 
-    await update.message.reply_text(
-        "📤 الآن أرسل الملف نفسه.\n\n"
-        "يمكنك إرسال:\n"
-        "📄 PDF / Word / Document\n"
+    await message.reply_text(
+        "📎 الآن أرسل الملف نفسه.\n\n"
+        "المسموح:\n"
+        "📄 مستند\n"
         "🖼️ صورة\n"
         "🎥 فيديو\n"
-        "🎵 ملف صوتي\n\n"
-        "للإلغاء استخدم /cancel"
+        "🎵 صوت"
     )
 
     return ADD_FILE_UPLOAD
@@ -1106,88 +1200,70 @@ async def receive_add_file_upload(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
-
     message = update.message
 
-    telegram_file_id = None
-    file_type = None
-    file_size = None
+    if message is None:
+        return ADD_FILE_UPLOAD
 
-    if message.document is not None:
-        telegram_file_id = message.document.file_id
-        file_type = "document"
-        file_size = message.document.file_size
+    file_type, telegram_file_id, file_size = (
+        extract_telegram_file(message)
+    )
 
-    elif message.photo:
-        telegram_file_id = message.photo[-1].file_id
-        file_type = "photo"
-        file_size = message.photo[-1].file_size
-
-    elif message.video is not None:
-        telegram_file_id = message.video.file_id
-        file_type = "video"
-        file_size = message.video.file_size
-
-    elif message.audio is not None:
-        telegram_file_id = message.audio.file_id
-        file_type = "audio"
-        file_size = message.audio.file_size
-
-    else:
+    if not telegram_file_id:
         await message.reply_text(
-            "❌ نوع الملف غير مدعوم.\n\n"
-            "أرسل PDF أو Word أو صورة أو فيديو "
-            "أو ملف صوتي."
+            "❌ لم أتعرف على الملف.\n\n"
+            "أرسل مستند أو صورة أو فيديو أو ملف صوتي."
         )
         return ADD_FILE_UPLOAD
 
     stage_id = context.user_data.get(
         "admin_file_stage_id"
     )
-
     subject_id = context.user_data.get(
         "admin_file_subject_id"
     )
-
-    section_type = context.user_data.get(
-        "admin_file_section_type"
+    section_type = normalize_section_type(
+        context.user_data.get(
+            "admin_file_section_type"
+        )
     )
-
     name = context.user_data.get(
         "admin_file_name"
     )
-
     description = context.user_data.get(
         "admin_file_description"
     )
-
     sort_order = context.user_data.get(
         "admin_file_order"
     )
 
-    if not all([
-        stage_id,
-        subject_id,
-        section_type,
-        name,
-        sort_order,
-    ]):
+    if not stage_id or not subject_id:
         await message.reply_text(
-            "❌ انتهت عملية الإضافة.\n"
-            "ابدأ من لوحة إدارة الملفات مرة أخرى."
+            "❌ انتهت جلسة إضافة الملف.\n\n"
+            "ابدأ الإضافة من جديد."
         )
-
         clear_file_conversation(context)
+        return ConversationHandler.END
 
+    if section_type not in VALID_SECTION_TYPES:
+        await message.reply_text(
+            "❌ نوع القسم غير صالح."
+        )
+        clear_file_conversation(context)
+        return ConversationHandler.END
+
+    if not name:
+        await message.reply_text(
+            "❌ اسم الملف مفقود."
+        )
+        clear_file_conversation(context)
+        return ConversationHandler.END
+
+    if sort_order is None:
+        await message.reply_text(
+            "❌ ترتيب الملف مفقود."
+        )
+        clear_file_conversation(context)
         return ConversationHandler.END
 
     try:
@@ -1224,13 +1300,13 @@ async def receive_add_file_upload(
         )
 
         clear_file_conversation(context)
-
         return ConversationHandler.END
 
     await message.reply_text(
-        "✅ تمت إضافة الملف بنجاح.\n\n"
-        f"📄 {name}\n"
+        "✅ تم حفظ الملف بنجاح.\n\n"
+        f"📌 الاسم: {name}\n"
         f"{section_name(section_type)}\n"
+        f"📎 النوع: {FILE_TYPES.get(file_type, '📎 ملف')}\n"
         f"🔢 الترتيب: {sort_order}",
         reply_markup=after_save_keyboard(
             stage_id,
@@ -1276,7 +1352,14 @@ async def start_edit_file(
     file_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = parts[4]
+    section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     file = await get_file(
         file_id,
@@ -1292,18 +1375,26 @@ async def start_edit_file(
 
     clear_file_conversation(context)
 
+    context.user_data["admin_file_id"] = file_id
     context.user_data["admin_file_stage_id"] = stage_id
     context.user_data["admin_file_subject_id"] = subject_id
     context.user_data["admin_file_section_type"] = section_type
-    context.user_data["admin_file_id"] = file_id
+
+    context.user_data["admin_file_name"] = file["name"]
+    context.user_data["admin_file_description"] = file.get(
+        "description"
+    )
+    context.user_data["admin_file_order"] = file.get(
+        "sort_order",
+        0,
+    )
 
     await query.answer()
 
-    await query.edit_message_text(
-        "✏️ تعديل الملف\n\n"
+    await query.message.reply_text(
+        "✏️ تعديل بيانات الملف\n\n"
         f"الاسم الحالي:\n{file['name']}\n\n"
-        "أرسل الاسم الجديد:\n\n"
-        "للإلغاء استخدم /cancel"
+        "أرسل الاسم الجديد:"
     )
 
     return EDIT_FILE_NAME
@@ -1313,64 +1404,39 @@ async def receive_edit_file_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
-
-    name = normalize_text(
-        update.message.text
-    )
-
-    if not name:
-        await update.message.reply_text(
-            "❌ اسم الملف لا يمكن أن يكون فارغاً.\n\n"
-            "أرسل الاسم الجديد:"
-        )
+    if message is None or message.text is None:
         return EDIT_FILE_NAME
 
-    file_id = context.user_data.get(
-        "admin_file_id"
-    )
+    name = normalize_text(message.text)
 
-    subject_id = context.user_data.get(
-        "admin_file_subject_id"
-    )
-
-    section_type = context.user_data.get(
-        "admin_file_section_type"
-    )
-
-    response = (
-        supabase
-        .table("files")
-        .select("id")
-        .eq("subject_id", subject_id)
-        .eq("section_type", section_type)
-        .eq("name", name)
-        .neq("id", file_id)
-        .is_("deleted_at", "null")
-        .limit(1)
-        .execute()
-    )
-
-    if response.data:
-        await update.message.reply_text(
-            "⚠️ يوجد ملف آخر بهذا الاسم في نفس القسم.\n\n"
-            "أرسل اسماً مختلفاً:"
+    if not name:
+        await message.reply_text(
+            "❌ الاسم لا يمكن أن يكون فارغاً.\n\n"
+            "أرسل الاسم الجديد:"
         )
         return EDIT_FILE_NAME
 
     context.user_data["admin_file_name"] = name
 
-    await update.message.reply_text(
-        "📝 أرسل الوصف الجديد.\n\n"
-        "إذا ما تريد وصف، أرسل: -"
+    current_description = context.user_data.get(
+        "admin_file_description"
+    )
+
+    description_text = (
+        current_description
+        if current_description
+        else "لا يوجد وصف"
+    )
+
+    await message.reply_text(
+        "📝 الوصف الحالي:\n"
+        f"{description_text}\n\n"
+        "أرسل الوصف الجديد.\n"
+        "إذا لا يوجد وصف، أرسل:\n"
+        "`-`",
+        parse_mode="Markdown",
     )
 
     return EDIT_FILE_DESCRIPTION
@@ -1380,27 +1446,28 @@ async def receive_edit_file_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
+    if message is None or message.text is None:
+        return EDIT_FILE_DESCRIPTION
 
     description = normalize_description(
-        update.message.text
+        message.text
     )
 
-    context.user_data["admin_file_description"] = (
-        description
+    context.user_data[
+        "admin_file_description"
+    ] = description
+
+    current_order = context.user_data.get(
+        "admin_file_order",
+        0,
     )
 
-    await update.message.reply_text(
-        "🔢 أرسل الترتيب الجديد.\n\n"
-        "مثال: 1"
+    await message.reply_text(
+        "🔢 الترتيب الحالي:\n"
+        f"{current_order}\n\n"
+        "أرسل الترتيب الجديد:",
     )
 
     return EDIT_FILE_ORDER
@@ -1410,72 +1477,63 @@ async def receive_edit_file_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if (
-        update.effective_user is None
-        or update.message is None
-    ):
-        return ConversationHandler.END
+    message = update.message
 
-    if not await is_admin(update.effective_user.id):
-        clear_file_conversation(context)
-        return ConversationHandler.END
+    if message is None or message.text is None:
+        return EDIT_FILE_ORDER
 
-    text = update.message.text.strip()
+    text = normalize_text(message.text)
 
     try:
-        sort_order = int(text)
+        order = int(text)
     except ValueError:
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ الترتيب يجب أن يكون رقماً صحيحاً.\n\n"
-            "أرسل الترتيب مرة أخرى:"
+            "أرسل الترتيب الجديد:"
         )
         return EDIT_FILE_ORDER
 
-    if sort_order < 1:
-        await update.message.reply_text(
-            "❌ الترتيب يجب أن يكون 1 أو أكبر.\n\n"
-            "أرسل الترتيب مرة أخرى:"
+    if order < 0:
+        await message.reply_text(
+            "❌ الترتيب لا يمكن أن يكون سالباً.\n\n"
+            "أرسل الترتيب الجديد:"
         )
         return EDIT_FILE_ORDER
 
     file_id = context.user_data.get(
         "admin_file_id"
     )
-
-    subject_id = context.user_data.get(
-        "admin_file_subject_id"
-    )
-
     stage_id = context.user_data.get(
         "admin_file_stage_id"
     )
-
-    section_type = context.user_data.get(
-        "admin_file_section_type"
+    subject_id = context.user_data.get(
+        "admin_file_subject_id"
     )
-
+    section_type = normalize_section_type(
+        context.user_data.get(
+            "admin_file_section_type"
+        )
+    )
     name = context.user_data.get(
         "admin_file_name"
     )
-
     description = context.user_data.get(
         "admin_file_description"
     )
 
-    if not all([
-        file_id,
-        subject_id,
-        stage_id,
-        section_type,
-        name,
-    ]):
-        await update.message.reply_text(
-            "❌ انتهت عملية التعديل.\n"
-            "ابدأ من لوحة إدارة الملفات مرة أخرى."
+    if not file_id or not subject_id:
+        await message.reply_text(
+            "❌ انتهت جلسة التعديل.\n\n"
+            "ابدأ التعديل من جديد."
         )
-
         clear_file_conversation(context)
+        return ConversationHandler.END
 
+    if section_type not in VALID_SECTION_TYPES:
+        await message.reply_text(
+            "❌ نوع القسم غير صالح."
+        )
+        clear_file_conversation(context)
         return ConversationHandler.END
 
     try:
@@ -1485,34 +1543,34 @@ async def receive_edit_file_order(
             .update({
                 "name": name,
                 "description": description,
-                "sort_order": sort_order,
+                "sort_order": order,
             })
             .eq("id", file_id)
             .eq("subject_id", subject_id)
+            .is_("deleted_at", "null")
             .execute()
         )
 
         if not response.data:
             raise RuntimeError(
-                "Supabase did not return an updated file record."
+                "لم يتم تحديث سجل الملف."
             )
 
     except Exception as exc:
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ حدث خطأ أثناء تعديل الملف.\n\n"
             "🔎 تفاصيل الخطأ:\n"
-            f"{str(exc)}\n\n"
-            "لم يتم حفظ التعديلات."
+            f"{str(exc)}"
         )
 
         clear_file_conversation(context)
-
         return ConversationHandler.END
 
-    await update.message.reply_text(
+    await message.reply_text(
         "✅ تم تعديل الملف بنجاح.\n\n"
-        f"📄 {name}\n"
-        f"🔢 الترتيب: {sort_order}",
+        f"📌 الاسم: {name}\n"
+        f"{section_name(section_type)}\n"
+        f"🔢 الترتيب: {order}",
         reply_markup=after_save_keyboard(
             stage_id,
             subject_id,
@@ -1529,29 +1587,10 @@ async def receive_edit_file_order(
 # Enable / Disable
 # =========================
 
-async def disable_file(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    await set_file_status(
-        update,
-        active=False,
-    )
-
-
-async def enable_file(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    await set_file_status(
-        update,
-        active=True,
-    )
-
-
 async def set_file_status(
     update: Update,
-    active: bool,
+    context: ContextTypes.DEFAULT_TYPE,
+    is_active: bool,
 ):
     query = update.callback_query
 
@@ -1577,7 +1616,14 @@ async def set_file_status(
     file_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = parts[4]
+    section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     file = await get_file(
         file_id,
@@ -1596,89 +1642,65 @@ async def set_file_status(
             supabase
             .table("files")
             .update({
-                "is_active": active,
+                "is_active": is_active,
             })
             .eq("id", file_id)
             .eq("subject_id", subject_id)
+            .is_("deleted_at", "null")
             .execute()
         )
 
         if not response.data:
             raise RuntimeError(
-                "Supabase did not return an updated file record."
+                "لم يتم تحديث حالة الملف."
             )
 
     except Exception as exc:
         await query.answer(
-            f"❌ خطأ: {str(exc)}",
+            f"❌ فشل تحديث حالة الملف: {str(exc)}",
             show_alert=True,
         )
         return
 
-    await query.answer(
-        "✅ تم تفعيل الملف."
-        if active
-        else "✅ تم تعطيل الملف.",
-        show_alert=True,
-    )
+    await query.answer()
 
-    await show_file_after_status(
-        query,
-        file_id,
-        stage_id,
-        subject_id,
-        section_type,
-    )
-
-
-async def show_file_after_status(
-    query,
-    file_id,
-    stage_id,
-    subject_id,
-    section_type,
-):
-    file = await get_file(
-        file_id,
-        subject_id,
-    )
-
-    if not file:
-        await query.edit_message_text(
-            "❌ الملف غير موجود."
-        )
-        return
-
-    file_type = FILE_TYPES.get(
-        file.get("file_type"),
-        "📎 ملف",
-    )
-
-    description = (
-        file.get("description")
-        or "لا يوجد وصف."
-    )
-
-    status = (
-        "🟢 مفعّل"
-        if file["is_active"]
-        else "🔴 معطّل"
+    status_text = (
+        "🟢 تم تفعيل الملف."
+        if is_active
+        else "🔴 تم تعطيل الملف."
     )
 
     await query.edit_message_text(
-        f"📄 {file['name']}\n\n"
-        f"القسم: {section_name(section_type)}\n"
-        f"النوع: {file_type}\n"
-        f"الوصف:\n{description}\n\n"
-        f"الترتيب: {file['sort_order']}\n"
-        f"الحالة: {status}",
-        reply_markup=file_manage_keyboard(
-            file_id,
+        f"{status_text}\n\n"
+        f"📌 {file['name']}\n"
+        f"{section_name(section_type)}",
+        reply_markup=after_save_keyboard(
             stage_id,
             subject_id,
             section_type,
-            file["is_active"],
         ),
+    )
+
+
+async def disable_file(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    await set_file_status(
+        update,
+        context,
+        False,
+    )
+
+
+async def enable_file(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    await set_file_status(
+        update,
+        context,
+        True,
     )
 
 
@@ -1714,7 +1736,14 @@ async def delete_file(
     file_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = parts[4]
+    section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     file = await get_file(
         file_id,
@@ -1732,9 +1761,11 @@ async def delete_file(
 
     await query.edit_message_text(
         "⚠️ تأكيد حذف الملف\n\n"
-        f"📄 {file['name']}\n\n"
-        "سيتم إخفاء الملف عن الطلاب ولن يظهر ضمن القائمة.\n\n"
-        "هل أنت متأكد من الحذف؟",
+        f"📌 {file['name']}\n"
+        f"{section_name(section_type)}\n\n"
+        "الحذف هنا سيكون حذفاً من النظام، "
+        "ويمكن لاحقاً تنظيف السجلات المحذوفة نهائياً.\n\n"
+        "هل أنت متأكد؟",
         reply_markup=delete_confirm_keyboard(
             file_id,
             stage_id,
@@ -1772,7 +1803,14 @@ async def confirm_delete_file(
     file_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = parts[4]
+    section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     file = await get_file(
         file_id,
@@ -1781,18 +1819,16 @@ async def confirm_delete_file(
 
     if not file:
         await query.answer(
-            "❌ الملف غير موجود.",
+            "❌ الملف غير موجود أو تم حذفه مسبقاً.",
             show_alert=True,
         )
         return
 
+    deleted_at = datetime.now(
+        timezone.utc
+    ).isoformat()
+
     try:
-        from datetime import datetime, timezone
-
-        deleted_at = datetime.now(
-            timezone.utc
-        ).isoformat()
-
         response = (
             supabase
             .table("files")
@@ -1802,31 +1838,39 @@ async def confirm_delete_file(
             })
             .eq("id", file_id)
             .eq("subject_id", subject_id)
+            .is_("deleted_at", "null")
             .execute()
         )
 
         if not response.data:
             raise RuntimeError(
-                "Supabase did not return a deleted file record."
+                "لم يتم حذف سجل الملف."
             )
 
     except Exception as exc:
         await query.answer(
-            f"❌ خطأ: {str(exc)}",
+            "❌ فشل حذف الملف.",
             show_alert=True,
+        )
+
+        await query.edit_message_text(
+            "❌ حدث خطأ أثناء حذف الملف.\n\n"
+            "🔎 تفاصيل الخطأ:\n"
+            f"{str(exc)}"
         )
         return
 
-    await query.answer(
-        "✅ تم حذف الملف.",
-        show_alert=True,
-    )
+    await query.answer()
 
-    await show_file_list(
-        query,
-        stage_id,
-        subject_id,
-        section_type,
+    await query.edit_message_text(
+        "✅ تم حذف الملف بنجاح.\n\n"
+        f"📌 {file['name']}\n"
+        f"{section_name(section_type)}",
+        reply_markup=after_save_keyboard(
+            stage_id,
+            subject_id,
+            section_type,
+        ),
     )
 
 
@@ -1840,12 +1884,19 @@ async def cancel_file_operation(
 ):
     clear_file_conversation(context)
 
-    if update.message is not None:
+    if update.message:
         await update.message.reply_text(
-            "↩️ تم إلغاء العملية."
+            "❌ تم إلغاء العملية."
         )
 
     return ConversationHandler.END
+
+
+async def clear_file_conversation_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    clear_file_conversation(context)
 
 
 # =========================
@@ -1853,87 +1904,95 @@ async def cancel_file_operation(
 # =========================
 
 def file_conversation_handler():
-    return ConversationHandler(
+    add_file_conversation = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(
                 start_add_file,
                 pattern=r"^add_file:",
             ),
-            CallbackQueryHandler(
-                start_edit_file,
-                pattern=r"^edit_file:",
-            ),
         ],
-
         states={
             ADD_FILE_NAME: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     receive_add_file_name,
-                )
+                ),
             ],
-
             ADD_FILE_DESCRIPTION: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     receive_add_file_description,
-                )
+                ),
             ],
-
             ADD_FILE_ORDER: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     receive_add_file_order,
-                )
+                ),
             ],
-
             ADD_FILE_UPLOAD: [
                 MessageHandler(
-                    (
-                        filters.Document.ALL
-                        | filters.PHOTO
-                        | filters.VIDEO
-                        | filters.AUDIO
-                    ),
+                    filters.Document.ALL
+                    | filters.PHOTO
+                    | filters.VIDEO
+                    | filters.AUDIO,
                     receive_add_file_upload,
-                )
-            ],
-
-            EDIT_FILE_NAME: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    receive_edit_file_name,
-                )
-            ],
-
-            EDIT_FILE_DESCRIPTION: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    receive_edit_file_description,
-                )
-            ],
-
-            EDIT_FILE_ORDER: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    receive_edit_file_order,
-                )
+                ),
             ],
         },
-
         fallbacks=[
             CommandHandler(
                 "cancel",
                 cancel_file_operation,
-            )
+            ),
         ],
-
-        allow_reentry=False,
+        allow_reentry=True,
     )
+
+    edit_file_conversation = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(
+                start_edit_file,
+                pattern=r"^edit_file:",
+            ),
+        ],
+        states={
+            EDIT_FILE_NAME: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    receive_edit_file_name,
+                ),
+            ],
+            EDIT_FILE_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    receive_edit_file_description,
+                ),
+            ],
+            EDIT_FILE_ORDER: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    receive_edit_file_order,
+                ),
+            ],
+        },
+        fallbacks=[
+            CommandHandler(
+                "cancel",
+                cancel_file_operation,
+            ),
+        ],
+        allow_reentry=True,
+    )
+
+    return [
+        add_file_conversation,
+        edit_file_conversation,
+    ]
 
 
 # =========================
-# Navigation Helper
+# Back to Admin Files
 # =========================
 
 async def back_to_admin_files(
@@ -1954,7 +2013,37 @@ async def back_to_admin_files(
 
     await query.answer()
 
-    await admin_files(
-        update,
-        context,
+    response = (
+        supabase
+        .table("stages")
+        .select("id, stage_number, is_active")
+        .order("stage_number")
+        .execute()
+    )
+
+    stages = response.data or []
+
+    keyboard = []
+
+    for stage in stages:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"📚 المرحلة {stage['stage_number']}",
+                callback_data=(
+                    f"admin_file_stage:{stage['id']}"
+                ),
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ رجوع للوحة الإدارة",
+            callback_data="admin_back",
+        )
+    ])
+
+    await query.edit_message_text(
+        "📄 إدارة الملفات\n\n"
+        "اختر المرحلة:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
