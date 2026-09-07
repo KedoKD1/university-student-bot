@@ -176,28 +176,36 @@ async def file_button(
 
     file_type = file.get("file_type")
 
+    name = file.get("name") or "ملف"
+    description = file.get("description")
+
+    caption = f"📄 {name}"
+
+    if description:
+        caption += f"\n\n📝 {description}"
+
     if file_type == "photo":
         await query.message.reply_photo(
             photo=telegram_file_id,
-            caption=f"🖼️ {file['name']}"
+            caption=caption
         )
 
     elif file_type == "video":
         await query.message.reply_video(
             video=telegram_file_id,
-            caption=f"🎥 {file['name']}"
+            caption=caption
         )
 
     elif file_type == "audio":
         await query.message.reply_audio(
             audio=telegram_file_id,
-            caption=f"🎵 {file['name']}"
+            caption=caption
         )
 
     else:
         await query.message.reply_document(
             document=telegram_file_id,
-            caption=f"📄 {file['name']}"
+            caption=caption
         )
 
 
