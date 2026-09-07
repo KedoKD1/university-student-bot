@@ -6,7 +6,10 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
-from bot.keyboards.content import content_keyboard
+from bot.keyboards.content import (
+    content_keyboard,
+    files_section_keyboard,
+)
 
 
 MAX_CAPTION_LENGTH = 1024
@@ -33,6 +36,47 @@ def build_file_caption(name, description):
 
 
 async def show_files(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True
+        )
+        return
+
+    subject_id = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            "⛔ هذا الاختيار مو إلك.\n"
+            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            show_alert=True
+        )
+        return
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "📄 الملفات\n\n"
+        "اختر القسم:",
+        reply_markup=files_section_keyboard(
+            subject_id,
+            query.from_user.id,
+        )
+    )
+
+
+async def show_file_section(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
@@ -96,14 +140,14 @@ async def show_files(
 
     if not files:
         await query.edit_message_text(
-            f"{section_name}\n\n"
+            f"📄 الملفات — {section_name}\n\n"
             "لا توجد ملفات مضافة لهذا القسم حالياً.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        text="⬅️ رجوع للمادة",
+                        text="⬅️ رجوع للملفات",
                         callback_data=(
-                            f"back_content:"
+                            f"content:files:"
                             f"{subject_id}:{owner_id}"
                         )
                     )
@@ -126,16 +170,16 @@ async def show_files(
 
     keyboard.append([
         InlineKeyboardButton(
-            text="⬅️ رجوع للمادة",
+            text="⬅️ رجوع للملفات",
             callback_data=(
-                f"back_content:"
+                f"content:files:"
                 f"{subject_id}:{owner_id}"
             )
         )
     ])
 
     await query.edit_message_text(
-        f"{section_name}\n\n"
+        f"📄 الملفات — {section_name}\n\n"
         "اختر الملف:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -206,18 +250,10 @@ async def file_button(
     name = file.get("name") or "ملف"
     description = file.get("description")
 
-    # =========================
-    # File Caption
-    # =========================
-
     caption = build_file_caption(
         name,
         description,
     )
-
-    # =========================
-    # Send File
-    # =========================
 
     if file_type == "photo":
         await query.message.reply_photo(
@@ -318,4 +354,63 @@ async def back_to_content(
             query.from_user.id,
             stage_id
         )
+    )
+
+
+async def content_placeholder(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True
+        )
+        return
+
+    section = parts[1]
+    subject_id = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            "⛔ هذا الاختيار مو إلك.",
+            show_alert=True
+        )
+        return
+
+    if section == "summaries":
+        title = "📝 الملخصات"
+    elif section == "drawings":
+        title = "🎨 الرسومات"
+    else:
+        await query.answer(
+            "❌ القسم غير صالح.",
+            show_alert=True
+        )
+        return
+
+    await query.answer()
+
+    await query.edit_message_text(
+        f"{title}\n\n"
+        "هذا القسم قيد الإنشاء وسيتم توفير محتواه قريباً.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text="⬅️ رجوع للمادة",
+                    callback_data=(
+                        f"back_content:"
+                        f"{subject_id}:{owner_id}"
+                    )
+                )
+            ]
+        ])
     )
