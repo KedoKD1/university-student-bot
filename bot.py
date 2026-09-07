@@ -6,6 +6,12 @@ from telegram.ext import (
 
 from bot.database.client import supabase
 
+from bot.handlers.main_menu import (
+    show_main_menu,
+    main_menu_button,
+    back_main,
+)
+
 from bot.handlers.stages import (
     locked_stage_button,
     show_stages,
@@ -74,6 +80,19 @@ from bot.handlers.admin_summaries import (
     summary_conversation_handler,
 )
 
+from bot.handlers.schedules import (
+    show_schedule_stages,
+    show_schedule,
+    schedule_back_stages,
+)
+
+from bot.handlers.admin_schedules import (
+    admin_schedules,
+    admin_schedule_stage,
+    delete_schedule,
+    schedule_conversation_handler,
+)
+
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
@@ -115,7 +134,7 @@ def main():
     application.add_handler(
         CommandHandler(
             "start",
-            show_stages,
+            show_main_menu,
         )
     )
 
@@ -127,19 +146,41 @@ def main():
     )
 
     # =========================
-    # Admin Subject Conversation
+    # Admin Conversations
     # =========================
 
     application.add_handler(
         subject_conversation_handler()
     )
 
+    application.add_handler(
+        file_conversation_handler()
+    )
+
+    application.add_handler(
+        summary_conversation_handler()
+    )
+
+    application.add_handler(
+        schedule_conversation_handler()
+    )
+
     # =========================
-    # Admin File Conversation
+    # Main Menu
     # =========================
 
     application.add_handler(
-        file_conversation_handler()
+        CallbackQueryHandler(
+            main_menu_button,
+            pattern=r"^main:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            back_main,
+            pattern=r"^back_main:",
+        )
     )
 
     # =========================
@@ -186,20 +227,13 @@ def main():
     )
 
     # =========================
-    # Student Content
+    # Student Files
     # =========================
 
     application.add_handler(
         CallbackQueryHandler(
             show_files,
             pattern=r"^content:files:",
-        )
-    )
-
-    application.add_handler(
-        CallbackQueryHandler(
-            content_placeholder,
-            pattern=r"^content:(summaries|drawings):",
         )
     )
 
@@ -221,6 +255,42 @@ def main():
         CallbackQueryHandler(
             back_to_content,
             pattern=r"^back_content:",
+        )
+    )
+
+    # =========================
+    # Student Schedule
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_schedule_stages,
+            pattern=r"^schedule_menu$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_schedule,
+            pattern=r"^schedule_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            schedule_back_stages,
+            pattern=r"^schedule_back_stages:",
+        )
+    )
+
+    # =========================
+    # Student Summaries / Drawings
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            content_placeholder,
+            pattern=r"^content:(summaries|drawings):",
         )
     )
 
@@ -359,6 +429,119 @@ def main():
     )
 
     # =========================
+    # Admin Summaries
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summaries,
+            pattern=r"^admin_summaries$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_stage,
+            pattern=r"^admin_summary_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_subject,
+            pattern=r"^admin_summary_subject:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_subjects,
+            pattern=r"^admin_summary_subjects:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_sections,
+            pattern=r"^admin_summary_sections:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_section,
+            pattern=r"^admin_summary_section:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_summary_list,
+            pattern=r"^admin_summary_list:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_summary,
+            pattern=r"^manage_summary:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            disable_summary,
+            pattern=r"^disable_summary:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_summary,
+            pattern=r"^enable_summary:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_summary,
+            pattern=r"^delete_summary:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            confirm_delete_summary,
+            pattern=r"^confirm_delete_summary:",
+        )
+    )
+
+    # =========================
+    # Admin Schedule
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_schedules,
+            pattern=r"^admin_schedules$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_schedule_stage,
+            pattern=r"^admin_schedule_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_schedule,
+            pattern=r"^delete_schedule:",
+        )
+    )
+
+    # =========================
     # Admin Navigation
     # =========================
 
@@ -375,13 +558,16 @@ def main():
             pattern=(
                 r"^admin_"
                 r"(?!subjects$|back$|files$|"
-                r"stage_subjects:|file_)"
+                r"summaries$|schedules$|"
+                r"stage_subjects:|"
+                r"file_|"
+                r"summary_)"
             ),
         )
     )
 
     # =========================
-    # Start Bot
+    # Start
     # =========================
 
     print(
