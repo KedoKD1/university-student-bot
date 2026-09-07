@@ -15,10 +15,10 @@ from bot.keyboards.content import (
 MAX_CAPTION_LENGTH = 1024
 
 
-def build_file_caption(name, description):
+def build_caption(icon, name, description=None):
     name = name or "ملف"
 
-    caption = f"📄 {name}"
+    caption = f"{icon} {name}"
 
     if description:
         description = str(description).strip()
@@ -35,6 +35,13 @@ def build_file_caption(name, description):
     return caption
 
 
+def owner_error():
+    return (
+        "⛔ هذا الاختيار مو إلك.\n"
+        "استخدم /start حتى تحصل على قائمتك الخاصة."
+    )
+
+
 async def show_files(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -49,7 +56,7 @@ async def show_files(
     if len(parts) != 4:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -58,9 +65,8 @@ async def show_files(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
-            show_alert=True
+            owner_error(),
+            show_alert=True,
         )
         return
 
@@ -72,7 +78,7 @@ async def show_files(
         reply_markup=files_section_keyboard(
             subject_id,
             query.from_user.id,
-        )
+        ),
     )
 
 
@@ -90,7 +96,7 @@ async def show_file_section(
     if len(parts) != 4:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -100,9 +106,8 @@ async def show_file_section(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
-            show_alert=True
+            owner_error(),
+            show_alert=True,
         )
         return
 
@@ -112,7 +117,7 @@ async def show_file_section(
     ):
         await query.answer(
             "❌ نوع القسم غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -145,14 +150,14 @@ async def show_file_section(
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        text="⬅️ رجوع للملفات",
+                        "⬅️ رجوع للملفات",
                         callback_data=(
                             f"content:files:"
                             f"{subject_id}:{owner_id}"
-                        )
+                        ),
                     )
                 ]
-            ])
+            ]),
         )
         return
 
@@ -164,24 +169,24 @@ async def show_file_section(
                 text=f"📄 {file['name']}",
                 callback_data=(
                     f"file:{file['id']}:{owner_id}"
-                )
+                ),
             )
         ])
 
     keyboard.append([
         InlineKeyboardButton(
-            text="⬅️ رجوع للملفات",
+            "⬅️ رجوع للملفات",
             callback_data=(
                 f"content:files:"
                 f"{subject_id}:{owner_id}"
-            )
+            ),
         )
     ])
 
     await query.edit_message_text(
         f"📄 الملفات — {section_name}\n\n"
         "اختر الملف:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -199,7 +204,7 @@ async def file_button(
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -208,8 +213,8 @@ async def file_button(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
-            show_alert=True
+            owner_error(),
+            show_alert=True,
         )
         return
 
@@ -236,9 +241,7 @@ async def file_button(
 
     file = files[0]
 
-    telegram_file_id = file.get(
-        "telegram_file_id"
-    )
+    telegram_file_id = file.get("telegram_file_id")
 
     if not telegram_file_id:
         await query.message.reply_text(
@@ -247,13 +250,229 @@ async def file_button(
         return
 
     file_type = file.get("file_type")
-    name = file.get("name") or "ملف"
-    description = file.get("description")
-
-    caption = build_file_caption(
-        name,
-        description,
+    caption = build_caption(
+        "📄",
+        file.get("name"),
+        file.get("description"),
     )
+
+    if file_type == "photo":
+        await query.message.reply_photo(
+            photo=telegram_file_id,
+            caption=caption,
+        )
+
+    elif file_type == "video":
+        await query.message.reply_video(
+            video=telegram_file_id,
+            caption=caption,
+        )
+
+    elif file_type == "audio":
+        await query.message.reply_audio(
+            audio=telegram_file_id,
+            caption=caption,
+        )
+
+    else:
+        await query.message.reply_document(
+            document=telegram_file_id,
+            caption=caption,
+        )
+
+
+async def show_summaries_or_drawings(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    content_type = parts[1]
+    subject_id = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    if content_type == "summaries":
+        table_name = "summaries"
+        title = "📝 الملخصات"
+        icon = "📝"
+    elif content_type == "drawings":
+        table_name = "drawings"
+        title = "🎨 الرسومات"
+        icon = "🎨"
+    else:
+        await query.answer(
+            "❌ القسم غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table(table_name)
+        .select("*")
+        .eq("subject_id", subject_id)
+        .eq("is_active", True)
+        .is_("deleted_at", "null")
+        .order("sort_order")
+        .execute()
+    )
+
+    items = response.data or []
+
+    if not items:
+        await query.edit_message_text(
+            f"{title}\n\n"
+            "لا توجد محتويات مضافة لهذا القسم حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "⬅️ رجوع للمادة",
+                        callback_data=(
+                            f"back_content:"
+                            f"{subject_id}:{owner_id}"
+                        ),
+                    )
+                ]
+            ]),
+        )
+        return
+
+    keyboard = []
+
+    for item in items:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{icon} {item['name']}",
+                callback_data=(
+                    f"study_item:"
+                    f"{content_type}:"
+                    f"{item['id']}:"
+                    f"{subject_id}:"
+                    f"{owner_id}"
+                ),
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "⬅️ رجوع للمادة",
+            callback_data=(
+                f"back_content:"
+                f"{subject_id}:{owner_id}"
+            ),
+        )
+    ])
+
+    await query.edit_message_text(
+        f"{title}\n\n"
+        "اختر المحتوى:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def study_item_button(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 5:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    content_type = parts[1]
+    item_id = parts[2]
+    subject_id = parts[3]
+    owner_id = parts[4]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    if content_type == "summaries":
+        table_name = "summaries"
+        icon = "📝"
+    elif content_type == "drawings":
+        table_name = "drawings"
+        icon = "🎨"
+    else:
+        await query.answer(
+            "❌ القسم غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table(table_name)
+        .select("*")
+        .eq("id", item_id)
+        .eq("subject_id", subject_id)
+        .eq("is_active", True)
+        .is_("deleted_at", "null")
+        .limit(1)
+        .execute()
+    )
+
+    items = response.data or []
+
+    if not items:
+        await query.message.reply_text(
+            "❌ المحتوى غير موجود."
+        )
+        return
+
+    item = items[0]
+
+    telegram_file_id = item.get("telegram_file_id")
+
+    if not telegram_file_id:
+        await query.message.reply_text(
+            "⚠️ هذا المحتوى غير مرتبط بملف Telegram."
+        )
+        return
+
+    caption = build_caption(
+        icon,
+        item.get("name"),
+        item.get("description"),
+    )
+
+    file_type = item.get("file_type")
 
     if file_type == "photo":
         await query.message.reply_photo(
@@ -294,7 +513,7 @@ async def back_to_content(
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -303,8 +522,8 @@ async def back_to_content(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
-            show_alert=True
+            owner_error(),
+            show_alert=True,
         )
         return
 
@@ -323,18 +542,17 @@ async def back_to_content(
     if not subjects:
         await query.answer(
             "❌ المادة غير موجودة.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
     subject = subjects[0]
-
     stage_id = subject.get("stage_id")
 
     if stage_id is None:
         await query.answer(
             "❌ تعذر تحديد المرحلة الخاصة بالمادة.",
-            show_alert=True
+            show_alert=True,
         )
         return
 
@@ -352,65 +570,6 @@ async def back_to_content(
         reply_markup=content_keyboard(
             subject_id,
             query.from_user.id,
-            stage_id
-        )
-    )
-
-
-async def content_placeholder(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if query is None or query.from_user is None:
-        return
-
-    parts = query.data.split(":")
-
-    if len(parts) != 4:
-        await query.answer(
-            "❌ اختيار غير صالح.",
-            show_alert=True
-        )
-        return
-
-    section = parts[1]
-    subject_id = parts[2]
-    owner_id = parts[3]
-
-    if str(query.from_user.id) != owner_id:
-        await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
-            show_alert=True
-        )
-        return
-
-    if section == "summaries":
-        title = "📝 الملخصات"
-    elif section == "drawings":
-        title = "🎨 الرسومات"
-    else:
-        await query.answer(
-            "❌ القسم غير صالح.",
-            show_alert=True
-        )
-        return
-
-    await query.answer()
-
-    await query.edit_message_text(
-        f"{title}\n\n"
-        "هذا القسم قيد الإنشاء وسيتم توفير محتواه قريباً.",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    text="⬅️ رجوع للمادة",
-                    callback_data=(
-                        f"back_content:"
-                        f"{subject_id}:{owner_id}"
-                    )
-                )
-            ]
-        ])
+            stage_id,
+        ),
     )
