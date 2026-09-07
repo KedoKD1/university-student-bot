@@ -4,6 +4,10 @@ from telegram.ext import ContextTypes
 from bot.database.client import supabase
 
 
+# =========================
+# Admin Check
+# =========================
+
 async def is_admin(user_id: int) -> bool:
     response = (
         supabase
@@ -17,6 +21,10 @@ async def is_admin(user_id: int) -> bool:
 
     return bool(response.data)
 
+
+# =========================
+# Admin Keyboard
+# =========================
 
 def admin_keyboard():
     return InlineKeyboardMarkup([
@@ -59,6 +67,10 @@ def admin_keyboard():
     ])
 
 
+# =========================
+# Admin Command
+# =========================
+
 async def admin_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -81,6 +93,10 @@ async def admin_command(
         reply_markup=admin_keyboard()
     )
 
+
+# =========================
+# Back To Admin
+# =========================
 
 async def admin_back(
     update: Update,
@@ -108,6 +124,202 @@ async def admin_back(
     )
 
 
+# =========================
+# Delete Subject
+# =========================
+
+async def delete_subject(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    user_id = query.from_user.id
+
+    if not await is_admin(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True
+        )
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True
+        )
+        return
+
+    subject_id = parts[1]
+    stage_id = parts[2]
+
+    response = (
+        supabase
+        .table("subjects")
+        .select("id, name")
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
+    if not subjects:
+        await query.answer(
+            "❌ المادة غير موجودة.",
+            show_alert=True
+        )
+        return
+
+    subject = subjects[0]
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "⚠️ تأكيد حذف المادة\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
+        "هل أنت متأكد من حذف هذه المادة؟\n\n"
+        "⚠️ سيتم حذف الملفات المرتبطة بالمادة أيضاً.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "🗑️ نعم، احذف المادة",
+                    callback_data=(
+                        f"admin_confirm_delete_subject:"
+                        f"{subject_id}:{stage_id}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ إلغاء",
+                    callback_data=(
+                        f"manage_subject:"
+                        f"{subject_id}:{stage_id}"
+                    ),
+                )
+            ],
+        ])
+    )
+
+
+# =========================
+# Confirm Delete Subject
+# =========================
+
+async def confirm_delete_subject(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    user_id = query.from_user.id
+
+    if not await is_admin(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True
+        )
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True
+        )
+        return
+
+    subject_id = parts[1]
+    stage_id = parts[2]
+
+    response = (
+        supabase
+        .table("subjects")
+        .select("id, name")
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
+    if not subjects:
+        await query.answer(
+            "❌ المادة غير موجودة أو تم حذفها مسبقاً.",
+            show_alert=True
+        )
+        return
+
+    subject_name = subjects[0]["name"]
+
+    await query.answer(
+        "⏳ جارٍ حذف المادة..."
+    )
+
+    try:
+        # حذف الملفات المرتبطة بالمادة أولاً
+        supabase.table("files").delete().eq(
+            "subject_id",
+            subject_id,
+        ).execute()
+
+        # حذف المادة
+        supabase.table("subjects").delete().eq(
+            "id",
+            subject_id,
+        ).eq(
+            "stage_id",
+            stage_id,
+        ).execute()
+
+    except Exception:
+        await query.edit_message_text(
+            "❌ تعذر حذف المادة.\n\n"
+            "قد تكون هناك بيانات أخرى مرتبطة بهذه المادة "
+            "تمنع حذفها.\n\n"
+            "لم يتم إكمال عملية الحذف."
+        )
+        return
+
+    await query.edit_message_text(
+        "✅ تم حذف المادة بنجاح.\n\n"
+        f"📘 المادة: {subject_name}\n\n"
+        "تم حذف الملفات المرتبطة بها أيضاً.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "⬅️ العودة إلى المواد",
+                    callback_data=(
+                        f"admin_stage_subjects:{stage_id}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🛠️ لوحة الإدارة",
+                    callback_data="admin_back",
+                )
+            ],
+        ])
+    )
+
+
+# =========================
+# Admin Button
+# =========================
+
 async def admin_button(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -126,7 +338,29 @@ async def admin_button(
         )
         return
 
+    # =========================
+    # Delete Subject
+    # =========================
+
+    if query.data.startswith("admin_delete_subject:"):
+        await delete_subject(
+            update,
+            context,
+        )
+        return
+
+    if query.data.startswith("admin_confirm_delete_subject:"):
+        await confirm_delete_subject(
+            update,
+            context,
+        )
+        return
+
     await query.answer()
+
+    # =========================
+    # Admin Sections
+    # =========================
 
     if query.data == "admin_files":
         await query.edit_message_text(
