@@ -54,6 +54,12 @@ def admin_keyboard():
         ],
         [
             InlineKeyboardButton(
+                "📅 إدارة الجداول",
+                callback_data="admin_schedules"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "📢 الإعلانات",
                 callback_data="admin_announcements"
             )
