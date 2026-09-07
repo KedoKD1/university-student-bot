@@ -9,6 +9,29 @@ from bot.database.client import supabase
 from bot.keyboards.content import content_keyboard
 
 
+MAX_CAPTION_LENGTH = 1024
+
+
+def build_file_caption(name, description):
+    name = name or "ملف"
+
+    caption = f"📄 {name}"
+
+    if description:
+        description = str(description).strip()
+
+        if description:
+            caption += f"\n\n📝 {description}"
+
+    if len(caption) > MAX_CAPTION_LENGTH:
+        caption = (
+            caption[:MAX_CAPTION_LENGTH - 3].rstrip()
+            + "..."
+        )
+
+    return caption
+
+
 async def show_files(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -39,7 +62,10 @@ async def show_files(
         )
         return
 
-    if section_type not in ("theoretical", "practical"):
+    if section_type not in (
+        "theoretical",
+        "practical",
+    ):
         await query.answer(
             "❌ نوع القسم غير صالح.",
             show_alert=True
@@ -166,7 +192,9 @@ async def file_button(
 
     file = files[0]
 
-    telegram_file_id = file.get("telegram_file_id")
+    telegram_file_id = file.get(
+        "telegram_file_id"
+    )
 
     if not telegram_file_id:
         await query.message.reply_text(
@@ -175,37 +203,44 @@ async def file_button(
         return
 
     file_type = file.get("file_type")
-
     name = file.get("name") or "ملف"
     description = file.get("description")
 
-    caption = f"📄 {name}"
+    # =========================
+    # File Caption
+    # =========================
 
-    if description:
-        caption += f"\n\n📝 {description}"
+    caption = build_file_caption(
+        name,
+        description,
+    )
+
+    # =========================
+    # Send File
+    # =========================
 
     if file_type == "photo":
         await query.message.reply_photo(
             photo=telegram_file_id,
-            caption=caption
+            caption=caption,
         )
 
     elif file_type == "video":
         await query.message.reply_video(
             video=telegram_file_id,
-            caption=caption
+            caption=caption,
         )
 
     elif file_type == "audio":
         await query.message.reply_audio(
             audio=telegram_file_id,
-            caption=caption
+            caption=caption,
         )
 
     else:
         await query.message.reply_document(
             document=telegram_file_id,
-            caption=caption
+            caption=caption,
         )
 
 
