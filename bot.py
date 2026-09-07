@@ -26,10 +26,11 @@ from bot.handlers.subjects import (
 
 from bot.handlers.content import (
     back_to_content,
-    content_placeholder,
     file_button,
     show_file_section,
     show_files,
+    show_summaries_or_drawings,
+    study_item_button,
 )
 
 from bot.handlers.admin import (
@@ -288,11 +289,18 @@ def main():
     # =========================
 
     application.add_handler(
-        CallbackQueryHandler(
-            content_placeholder,
-            pattern=r"^content:(summaries|drawings):",
-        )
+    CallbackQueryHandler(
+        show_summaries_or_drawings,
+        pattern=r"^content:(summaries|drawings):",
     )
+)
+
+application.add_handler(
+    CallbackQueryHandler(
+        study_item_button,
+        pattern=r"^study_item:",
+    )
+)
 
     # =========================
     # Admin Subjects
