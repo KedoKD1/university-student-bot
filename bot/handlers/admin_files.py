@@ -1892,23 +1892,20 @@ async def cancel_file_operation(
     return ConversationHandler.END
 
 
-async def clear_file_conversation_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    clear_file_conversation(context)
-
-
 # =========================
 # Conversation Handler
 # =========================
 
 def file_conversation_handler():
-    add_file_conversation = ConversationHandler(
+    return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(
                 start_add_file,
                 pattern=r"^add_file:",
+            ),
+            CallbackQueryHandler(
+                start_edit_file,
+                pattern=r"^edit_file:",
             ),
         ],
         states={
@@ -1939,24 +1936,6 @@ def file_conversation_handler():
                     receive_add_file_upload,
                 ),
             ],
-        },
-        fallbacks=[
-            CommandHandler(
-                "cancel",
-                cancel_file_operation,
-            ),
-        ],
-        allow_reentry=True,
-    )
-
-    edit_file_conversation = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(
-                start_edit_file,
-                pattern=r"^edit_file:",
-            ),
-        ],
-        states={
             EDIT_FILE_NAME: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
@@ -1984,11 +1963,6 @@ def file_conversation_handler():
         ],
         allow_reentry=True,
     )
-
-    return [
-        add_file_conversation,
-        edit_file_conversation,
-    ]
 
 
 # =========================
