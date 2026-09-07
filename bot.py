@@ -20,7 +20,9 @@ from bot.handlers.subjects import (
 
 from bot.handlers.content import (
     back_to_content,
+    content_placeholder,
     file_button,
+    show_file_section,
     show_files,
 )
 
@@ -168,13 +170,27 @@ def main():
     )
 
     # =========================
-    # Content
+    # Student Content
     # =========================
 
     application.add_handler(
         CallbackQueryHandler(
             show_files,
-            pattern=r"^content:",
+            pattern=r"^content:files:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            content_placeholder,
+            pattern=r"^content:(summaries|drawings):",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_file_section,
+            pattern=r"^files_section:",
         )
     )
 
