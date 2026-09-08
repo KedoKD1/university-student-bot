@@ -1,10 +1,9 @@
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-)
+from datetime import datetime, timezone
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
     MessageHandler,
@@ -19,9 +18,14 @@ from bot.handlers.admin import is_admin
 # Conversation States
 # =========================
 
-ADD_DRAWING_NAME, ADD_DRAWING_DESCRIPTION, ADD_DRAWING_ORDER, ADD_DRAWING_UPLOAD = range(4)
+ADD_DRAWING_NAME = 0
+ADD_DRAWING_DESCRIPTION = 1
+ADD_DRAWING_ORDER = 2
+ADD_DRAWING_UPLOAD = 3
 
-EDIT_DRAWING_NAME, EDIT_DRAWING_DESCRIPTION, EDIT_DRAWING_ORDER = range(4, 7)
+EDIT_DRAWING_NAME = 4
+EDIT_DRAWING_DESCRIPTION = 5
+EDIT_DRAWING_ORDER = 6
 
 
 # =========================
@@ -32,6 +36,7 @@ VALID_SECTION_TYPES = {
     "theoretical",
     "practical",
 }
+
 
 SECTION_TYPE_ALIASES = {
     "theory": "theoretical",
@@ -76,6 +81,10 @@ def section_name(section_type):
         return "🧪 العملي"
 
     return "❓ غير محدد"
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def clear_drawing_conversation(context):
@@ -155,7 +164,8 @@ def section_keyboard(stage_id, subject_id):
             InlineKeyboardButton(
                 text="⬅️ رجوع للمواد",
                 callback_data=(
-                    f"admin_drawing_subjects:{stage_id}"
+                    f"admin_drawing_subjects:"
+                    f"{stage_id}"
                 ),
             )
         ],
@@ -173,14 +183,21 @@ def drawing_list_keyboard(
     keyboard = []
 
     for drawing in drawings:
-        status = "🟢" if drawing["is_active"] else "🔴"
+        status = (
+            "🟢"
+            if drawing["is_active"]
+            else "🔴"
+        )
 
         keyboard.append([
             InlineKeyboardButton(
                 text=f"{status} {drawing['name']}",
                 callback_data=(
-                    f"manage_drawing:{drawing['id']}:"
-                    f"{subject_id}:{section_type}"
+                    f"manage_drawing:"
+                    f"{drawing['id']}:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             )
         ])
@@ -189,8 +206,10 @@ def drawing_list_keyboard(
         InlineKeyboardButton(
             text="➕ إضافة رسمة",
             callback_data=(
-                f"add_drawing:{stage_id}:"
-                f"{subject_id}:{section_type}"
+                f"add_drawing:"
+                f"{stage_id}:"
+                f"{subject_id}:"
+                f"{section_type}"
             ),
         )
     ])
@@ -200,7 +219,8 @@ def drawing_list_keyboard(
             text="⬅️ رجوع للأقسام",
             callback_data=(
                 f"admin_drawing_sections:"
-                f"{stage_id}:{subject_id}"
+                f"{stage_id}:"
+                f"{subject_id}"
             ),
         )
     ])
@@ -219,15 +239,24 @@ def drawing_manage_keyboard(
 
     if is_active:
         toggle_text = "🔴 تعطيل الرسمة"
+
         toggle_callback = (
-            f"disable_drawing:{drawing_id}:"
-            f"{stage_id}:{subject_id}:{section_type}"
+            f"disable_drawing:"
+            f"{drawing_id}:"
+            f"{stage_id}:"
+            f"{subject_id}:"
+            f"{section_type}"
         )
+
     else:
         toggle_text = "🟢 تفعيل الرسمة"
+
         toggle_callback = (
-            f"enable_drawing:{drawing_id}:"
-            f"{stage_id}:{subject_id}:{section_type}"
+            f"enable_drawing:"
+            f"{drawing_id}:"
+            f"{stage_id}:"
+            f"{subject_id}:"
+            f"{section_type}"
         )
 
     return InlineKeyboardMarkup([
@@ -235,8 +264,11 @@ def drawing_manage_keyboard(
             InlineKeyboardButton(
                 text="✏️ تعديل البيانات",
                 callback_data=(
-                    f"edit_drawing:{drawing_id}:"
-                    f"{stage_id}:{subject_id}:{section_type}"
+                    f"edit_drawing:"
+                    f"{drawing_id}:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             )
         ],
@@ -250,8 +282,11 @@ def drawing_manage_keyboard(
             InlineKeyboardButton(
                 text="🗑️ حذف الرسمة",
                 callback_data=(
-                    f"delete_drawing:{drawing_id}:"
-                    f"{stage_id}:{subject_id}:{section_type}"
+                    f"delete_drawing:"
+                    f"{drawing_id}:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             )
         ],
@@ -259,8 +294,10 @@ def drawing_manage_keyboard(
             InlineKeyboardButton(
                 text="⬅️ رجوع للرسومات",
                 callback_data=(
-                    f"admin_drawing_list:{stage_id}:"
-                    f"{subject_id}:{section_type}"
+                    f"admin_drawing_list:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             )
         ],
@@ -280,15 +317,21 @@ def delete_confirm_keyboard(
             InlineKeyboardButton(
                 text="🗑️ نعم، احذف",
                 callback_data=(
-                    f"confirm_delete_drawing:{drawing_id}:"
-                    f"{stage_id}:{subject_id}:{section_type}"
+                    f"confirm_delete_drawing:"
+                    f"{drawing_id}:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             ),
             InlineKeyboardButton(
                 text="❌ إلغاء",
                 callback_data=(
-                    f"manage_drawing:{drawing_id}:"
-                    f"{subject_id}:{section_type}"
+                    f"manage_drawing:"
+                    f"{drawing_id}:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section_type}"
                 ),
             ),
         ],
@@ -335,7 +378,10 @@ async def get_drawings(
     )
 
     if not include_inactive:
-        query = query.eq("is_active", True)
+        query = query.eq(
+            "is_active",
+            True,
+        )
 
     response = query.execute()
 
@@ -360,7 +406,11 @@ async def get_drawing(
             subject_id,
         )
 
-    response = query.limit(1).execute()
+    response = (
+        query
+        .limit(1)
+        .execute()
+    )
 
     drawings = response.data or []
 
@@ -371,7 +421,7 @@ async def get_drawing(
 
 
 # =========================
-# Admin Drawings Main
+# Admin Drawings
 # =========================
 
 async def admin_drawings(
@@ -383,7 +433,9 @@ async def admin_drawings(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -395,7 +447,9 @@ async def admin_drawings(
     response = (
         supabase
         .table("stages")
-        .select("id, stage_number, is_active")
+        .select(
+            "id, stage_number, is_active"
+        )
         .order("stage_number")
         .execute()
     )
@@ -411,11 +465,21 @@ async def admin_drawings(
     keyboard = []
 
     for stage in stages:
+        status = (
+            "🟢"
+            if stage["is_active"]
+            else "🔴"
+        )
+
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📚 المرحلة {stage['stage_number']}",
+                text=(
+                    f"{status} "
+                    f"المرحلة {stage['stage_number']}"
+                ),
                 callback_data=(
-                    f"admin_drawing_stage:{stage['id']}"
+                    f"admin_drawing_stage:"
+                    f"{stage['id']}"
                 ),
             )
         ])
@@ -430,7 +494,9 @@ async def admin_drawings(
     await query.edit_message_text(
         "🎨 إدارة الرسومات\n\n"
         "اختر المرحلة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -447,7 +513,9 @@ async def admin_drawing_stage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -467,19 +535,29 @@ async def admin_drawing_stage(
 
     await query.answer()
 
-    subjects = await get_subjects(stage_id)
+    subjects = await get_subjects(
+        stage_id
+    )
 
     keyboard = []
 
     for subject in subjects:
-        status = "🟢" if subject["is_active"] else "🔴"
+        status = (
+            "🟢"
+            if subject["is_active"]
+            else "🔴"
+        )
 
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{status} {subject['name']}",
+                text=(
+                    f"{status} "
+                    f"{subject['name']}"
+                ),
                 callback_data=(
                     f"admin_drawing_subject:"
-                    f"{subject['id']}:{stage_id}"
+                    f"{subject['id']}:"
+                    f"{stage_id}"
                 ),
             )
         ])
@@ -491,18 +569,86 @@ async def admin_drawing_stage(
         )
     ])
 
-    if not subjects:
-        await query.edit_message_text(
-            "🎨 إدارة الرسومات\n\n"
-            "لا توجد مواد مضافة لهذه المرحلة.",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+    await query.edit_message_text(
+        "🎨 إدارة الرسومات\n\n"
+        "اختر المادة:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
+    )
+
+
+async def admin_drawing_subjects(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await is_admin(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
         )
         return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    stage_id = parts[1]
+
+    await query.answer()
+
+    subjects = await get_subjects(
+        stage_id
+    )
+
+    keyboard = []
+
+    for subject in subjects:
+        status = (
+            "🟢"
+            if subject["is_active"]
+            else "🔴"
+        )
+
+        keyboard.append([
+            InlineKeyboardButton(
+                text=(
+                    f"{status} "
+                    f"{subject['name']}"
+                ),
+                callback_data=(
+                    f"admin_drawing_subject:"
+                    f"{subject['id']}:"
+                    f"{stage_id}"
+                ),
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ رجوع للمراحل",
+            callback_data="admin_drawings",
+        )
+    ])
 
     await query.edit_message_text(
         "🎨 إدارة الرسومات\n\n"
         "اختر المادة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -519,7 +665,9 @@ async def admin_drawing_subject(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -558,11 +706,11 @@ async def admin_drawing_subject(
         )
         return
 
-    subject = subjects[0]
+    subject_name = subjects[0]["name"]
 
     await query.edit_message_text(
-        "🎨 إدارة الرسومات\n"
-        f"📘 {subject['name']}\n\n"
+        "🎨 إدارة الرسومات\n\n"
+        f"📘 المادة: {subject_name}\n\n"
         "اختر القسم:",
         reply_markup=section_keyboard(
             stage_id,
@@ -572,71 +720,7 @@ async def admin_drawing_subject(
 
 
 # =========================
-# Section → Subjects
-# =========================
-
-async def admin_drawing_subjects(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return
-
-    parts = query.data.split(":")
-
-    if len(parts) != 2:
-        await query.answer(
-            "❌ اختيار غير صالح.",
-            show_alert=True,
-        )
-        return
-
-    stage_id = parts[1]
-
-    await query.answer()
-
-    subjects = await get_subjects(stage_id)
-
-    keyboard = []
-
-    for subject in subjects:
-        status = "🟢" if subject["is_active"] else "🔴"
-
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"{status} {subject['name']}",
-                callback_data=(
-                    f"admin_drawing_subject:"
-                    f"{subject['id']}:{stage_id}"
-                ),
-            )
-        ])
-
-    keyboard.append([
-        InlineKeyboardButton(
-            text="⬅️ رجوع للمراحل",
-            callback_data="admin_drawings",
-        )
-    ])
-
-    await query.edit_message_text(
-        "🎨 إدارة الرسومات\n\n"
-        "اختر المادة:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-# =========================
-# Subject → Sections
+# Sections → Drawings
 # =========================
 
 async def admin_drawing_sections(
@@ -648,7 +732,9 @@ async def admin_drawing_sections(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -669,29 +755,8 @@ async def admin_drawing_sections(
 
     await query.answer()
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("id, name")
-        .eq("id", subject_id)
-        .eq("stage_id", stage_id)
-        .limit(1)
-        .execute()
-    )
-
-    subjects = response.data or []
-
-    if not subjects:
-        await query.edit_message_text(
-            "❌ المادة غير موجودة."
-        )
-        return
-
-    subject = subjects[0]
-
     await query.edit_message_text(
-        "🎨 إدارة الرسومات\n"
-        f"📘 {subject['name']}\n\n"
+        "🎨 إدارة الرسومات\n\n"
         "اختر القسم:",
         reply_markup=section_keyboard(
             stage_id,
@@ -699,10 +764,6 @@ async def admin_drawing_sections(
         ),
     )
 
-
-# =========================
-# Section → Drawing List
-# =========================
 
 async def admin_drawing_section(
     update: Update,
@@ -713,7 +774,9 @@ async def admin_drawing_section(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -729,7 +792,10 @@ async def admin_drawing_section(
         )
         return
 
-    section_type = normalize_section_type(parts[1])
+    section_type = normalize_section_type(
+        parts[1]
+    )
+
     subject_id = parts[2]
     stage_id = parts[3]
 
@@ -749,14 +815,11 @@ async def admin_drawing_section(
     )
 
     text = (
-        "🎨 إدارة الرسومات\n\n"
+        "🎨 إدارة الرسومات\n"
         f"{section_name(section_type)}\n\n"
+        f"عدد الرسومات: {len(drawings)}\n\n"
+        "اختر رسمة أو أضف رسمة جديدة:"
     )
-
-    if drawings:
-        text += "اختر الرسمة لإدارتها:"
-    else:
-        text += "لا توجد رسومات مضافة حاليًا."
 
     await query.edit_message_text(
         text,
@@ -769,10 +832,6 @@ async def admin_drawing_section(
     )
 
 
-# =========================
-# Drawing List
-# =========================
-
 async def admin_drawing_list(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -782,7 +841,9 @@ async def admin_drawing_list(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -800,7 +861,10 @@ async def admin_drawing_list(
 
     stage_id = parts[1]
     subject_id = parts[2]
-    section_type = normalize_section_type(parts[3])
+
+    section_type = normalize_section_type(
+        parts[3]
+    )
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -817,14 +881,11 @@ async def admin_drawing_list(
         include_inactive=True,
     )
 
-    text = (
-        "🎨 إدارة الرسومات\n\n"
-        f"{section_name(section_type)}\n\n"
-        "اختر الرسمة:"
-    )
-
     await query.edit_message_text(
-        text,
+        "🎨 إدارة الرسومات\n"
+        f"{section_name(section_type)}\n\n"
+        f"عدد الرسومات: {len(drawings)}\n\n"
+        "اختر رسمة أو أضف رسمة جديدة:",
         reply_markup=drawing_list_keyboard(
             drawings,
             stage_id,
@@ -847,7 +908,9 @@ async def manage_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -856,7 +919,7 @@ async def manage_drawing(
 
     parts = query.data.split(":")
 
-    if len(parts) != 4:
+    if len(parts) != 5:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -864,8 +927,12 @@ async def manage_drawing(
         return
 
     drawing_id = parts[1]
-    subject_id = parts[2]
-    section_type = normalize_section_type(parts[3])
+    stage_id = parts[2]
+    subject_id = parts[3]
+
+    section_type = normalize_section_type(
+        parts[4]
+    )
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -874,18 +941,19 @@ async def manage_drawing(
         )
         return
 
-    await query.answer()
-
     drawing = await get_drawing(
         drawing_id,
         subject_id,
     )
 
     if not drawing:
-        await query.edit_message_text(
-            "❌ الرسمة غير موجودة."
+        await query.answer(
+            "❌ الرسمة غير موجودة.",
+            show_alert=True,
         )
         return
+
+    await query.answer()
 
     status = (
         "🟢 مفعّلة"
@@ -893,24 +961,21 @@ async def manage_drawing(
         else "🔴 معطّلة"
     )
 
-    description = drawing.get("description")
-
-    text = (
-        "🎨 إدارة الرسمة\n\n"
-        f"📌 الاسم: {drawing['name']}\n"
-        f"📂 القسم: {section_name(section_type)}\n"
-        f"📊 الحالة: {status}\n"
-        f"🔢 الترتيب: {drawing.get('sort_order', 0)}\n"
+    description = (
+        drawing.get("description")
+        or "لا يوجد"
     )
 
-    if description:
-        text += f"\n📝 الوصف: {description}"
-
     await query.edit_message_text(
-        text,
+        "🎨 إدارة الرسمة\n\n"
+        f"📌 الاسم: {drawing['name']}\n"
+        f"📝 الوصف: {description}\n"
+        f"📂 القسم: {section_name(section_type)}\n"
+        f"🔢 الترتيب: {drawing.get('sort_order', 0)}\n"
+        f"📊 الحالة: {status}",
         reply_markup=drawing_manage_keyboard(
             drawing_id,
-            drawing.get("stage_id", ""),
+            stage_id,
             subject_id,
             section_type,
             drawing["is_active"],
@@ -931,7 +996,9 @@ async def start_add_drawing(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -949,7 +1016,10 @@ async def start_add_drawing(
 
     stage_id = parts[1]
     subject_id = parts[2]
-    section_type = normalize_section_type(parts[3])
+
+    section_type = normalize_section_type(
+        parts[3]
+    )
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -958,14 +1028,18 @@ async def start_add_drawing(
         )
         return ConversationHandler.END
 
+    clear_drawing_conversation(context)
+
+    context.user_data.update({
+        "admin_drawing_stage_id": stage_id,
+        "admin_drawing_subject_id": subject_id,
+        "admin_drawing_section_type": section_type,
+    })
+
     await query.answer()
 
-    context.user_data["admin_drawing_stage_id"] = stage_id
-    context.user_data["admin_drawing_subject_id"] = subject_id
-    context.user_data["admin_drawing_section_type"] = section_type
-
     await query.edit_message_text(
-        "➕ إضافة رسمة\n\n"
+        "➕ إضافة رسمة جديدة\n\n"
         "أرسل اسم الرسمة:"
     )
 
@@ -976,25 +1050,28 @@ async def receive_drawing_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.message is None:
+    if not update.message or not update.message.text:
         return ADD_DRAWING_NAME
 
     name = normalize_text(
-        update.message.text or ""
+        update.message.text
     )
 
     if not name:
         await update.message.reply_text(
-            "❌ اسم الرسمة لا يمكن أن يكون فارغًا.\n"
+            "❌ الاسم لا يمكن أن يكون فارغًا.\n"
             "أرسل الاسم مرة أخرى:"
         )
+
         return ADD_DRAWING_NAME
 
-    context.user_data["admin_drawing_name"] = name
+    context.user_data[
+        "admin_drawing_name"
+    ] = name
 
     await update.message.reply_text(
         "📝 أرسل وصف الرسمة.\n\n"
-        "إذا لا يوجد وصف، أرسل: -"
+        "إذا لا يوجد وصف أرسل: -"
     )
 
     return ADD_DRAWING_DESCRIPTION
@@ -1004,14 +1081,16 @@ async def receive_drawing_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.message is None:
+    if not update.message or not update.message.text:
         return ADD_DRAWING_DESCRIPTION
 
     description = normalize_description(
-        update.message.text or ""
+        update.message.text
     )
 
-    context.user_data["admin_drawing_description"] = description
+    context.user_data[
+        "admin_drawing_description"
+    ] = description
 
     await update.message.reply_text(
         "🔢 أرسل رقم ترتيب الرسمة.\n\n"
@@ -1025,25 +1104,36 @@ async def receive_drawing_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.message is None:
+    if not update.message or not update.message.text:
         return ADD_DRAWING_ORDER
-
-    value = (update.message.text or "").strip()
 
     try:
-        order = int(value)
+        order = int(
+            update.message.text.strip()
+        )
+
+        if order < 0:
+            raise ValueError
+
     except ValueError:
         await update.message.reply_text(
-            "❌ أرسل رقمًا صحيحًا فقط.\n"
+            "❌ أرسل رقم ترتيب صحيح.\n"
             "مثال: 1"
         )
+
         return ADD_DRAWING_ORDER
 
-    context.user_data["admin_drawing_order"] = order
+    context.user_data[
+        "admin_drawing_order"
+    ] = order
 
     await update.message.reply_text(
-        "📎 الآن أرسل الرسمة.\n\n"
-        "يمكن إرسال صورة أو مستند أو فيديو أو صوت."
+        "📎 الآن أرسل ملف الرسمة.\n\n"
+        "المسموح:\n"
+        "🖼️ صورة\n"
+        "📄 مستند\n"
+        "🎥 فيديو\n"
+        "🎵 صوت"
     )
 
     return ADD_DRAWING_UPLOAD
@@ -1053,84 +1143,103 @@ async def receive_drawing_upload(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.message is None:
+    message = update.message
+
+    if message is None:
         return ADD_DRAWING_UPLOAD
 
     (
         file_type,
         telegram_file_id,
         file_size,
-    ) = extract_telegram_file(update.message)
+    ) = extract_telegram_file(message)
 
     if not telegram_file_id:
-        await update.message.reply_text(
-            "❌ أرسل صورة أو مستند أو فيديو أو صوت."
+        await message.reply_text(
+            "❌ أرسل ملف الرسمة كصورة أو "
+            "مستند أو فيديو أو صوت."
         )
+
         return ADD_DRAWING_UPLOAD
 
     stage_id = context.user_data.get(
         "admin_drawing_stage_id"
     )
+
     subject_id = context.user_data.get(
         "admin_drawing_subject_id"
     )
+
     section_type = context.user_data.get(
         "admin_drawing_section_type"
     )
+
     name = context.user_data.get(
         "admin_drawing_name"
     )
+
     description = context.user_data.get(
         "admin_drawing_description"
     )
+
     sort_order = context.user_data.get(
         "admin_drawing_order",
         0,
     )
 
-    if not all([
-        stage_id,
-        subject_id,
-        section_type,
-        name,
-    ]):
-        clear_drawing_conversation(context)
+    if (
+        not stage_id
+        or not subject_id
+        or section_type not in VALID_SECTION_TYPES
+        or not name
+    ):
+        clear_drawing_conversation(
+            context
+        )
 
-        await update.message.reply_text(
-            "❌ انتهت جلسة الإضافة. حاول مرة أخرى."
+        await message.reply_text(
+            "❌ انتهت جلسة الإضافة.\n"
+            "ابدأ الإضافة من لوحة الإدارة من جديد."
         )
 
         return ConversationHandler.END
 
     try:
-        supabase.table("drawings").insert({
-            "subject_id": int(subject_id),
-            "section_type": section_type,
-            "name": name,
-            "description": description,
-            "telegram_file_id": telegram_file_id,
-            "file_type": file_type,
-            "file_size": file_size,
-            "sort_order": sort_order,
-            "is_active": True,
-            "deleted_at": None,
-        }).execute()
+        (
+            supabase
+            .table("drawings")
+            .insert({
+                "subject_id": int(subject_id),
+                "section_type": section_type,
+                "name": name,
+                "description": description,
+                "telegram_file_id": telegram_file_id,
+                "file_type": file_type,
+                "file_size": file_size,
+                "sort_order": sort_order,
+                "is_active": True,
+                "deleted_at": None,
+            })
+            .execute()
+        )
 
     except Exception as exc:
         print(
-            f"Error adding drawing: {exc}"
+            f"DRAWING INSERT ERROR: {exc}"
         )
 
-        await update.message.reply_text(
-            "❌ حدث خطأ أثناء حفظ الرسمة.\n"
-            "لم يتم حفظها."
+        await message.reply_text(
+            "❌ حدث خطأ أثناء حفظ الرسمة "
+            "في قاعدة البيانات."
         )
 
         return ConversationHandler.END
 
-    clear_drawing_conversation(context)
+    clear_drawing_conversation(
+        context
+    )
 
-    await update.message.reply_text(
+    await message.reply_text(
         "✅ تمت إضافة الرسمة بنجاح."
     )
 
@@ -1138,7 +1247,244 @@ async def receive_drawing_upload(
 
 
 # =========================
-# Disable Drawing
+# Edit Drawing
+# =========================
+
+async def start_edit_drawing(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return ConversationHandler.END
+
+    if not await is_admin(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    parts = query.data.split(":")
+
+    if len(parts) != 5:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    drawing_id = parts[1]
+    stage_id = parts[2]
+    subject_id = parts[3]
+
+    section_type = normalize_section_type(
+        parts[4]
+    )
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ قسم غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    drawing = await get_drawing(
+        drawing_id,
+        subject_id,
+    )
+
+    if not drawing:
+        await query.answer(
+            "❌ الرسمة غير موجودة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    clear_drawing_conversation(
+        context
+    )
+
+    context.user_data.update({
+        "admin_drawing_id": drawing_id,
+        "admin_drawing_stage_id": stage_id,
+        "admin_drawing_subject_id": subject_id,
+        "admin_drawing_section_type": section_type,
+    })
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "✏️ تعديل الرسمة\n\n"
+        f"الاسم الحالي:\n"
+        f"{drawing['name']}\n\n"
+        "أرسل الاسم الجديد:"
+    )
+
+    return EDIT_DRAWING_NAME
+
+
+async def receive_edit_drawing_name(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not update.message or not update.message.text:
+        return EDIT_DRAWING_NAME
+
+    name = normalize_text(
+        update.message.text
+    )
+
+    if not name:
+        await update.message.reply_text(
+            "❌ الاسم لا يمكن أن يكون فارغًا.\n"
+            "أرسل الاسم مرة أخرى:"
+        )
+
+        return EDIT_DRAWING_NAME
+
+    context.user_data[
+        "admin_drawing_name"
+    ] = name
+
+    await update.message.reply_text(
+        "📝 أرسل الوصف الجديد.\n\n"
+        "إذا لا يوجد وصف أرسل: -"
+    )
+
+    return EDIT_DRAWING_DESCRIPTION
+
+
+async def receive_edit_drawing_description(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not update.message or not update.message.text:
+        return EDIT_DRAWING_DESCRIPTION
+
+    description = normalize_description(
+        update.message.text
+    )
+
+    context.user_data[
+        "admin_drawing_description"
+    ] = description
+
+    await update.message.reply_text(
+        "🔢 أرسل رقم الترتيب الجديد.\n\n"
+        "مثال: 1"
+    )
+
+    return EDIT_DRAWING_ORDER
+
+
+async def receive_edit_drawing_order(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not update.message or not update.message.text:
+        return EDIT_DRAWING_ORDER
+
+    try:
+        order = int(
+            update.message.text.strip()
+        )
+
+        if order < 0:
+            raise ValueError
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ أرسل رقم ترتيب صحيح.\n"
+            "مثال: 1"
+        )
+
+        return EDIT_DRAWING_ORDER
+
+    drawing_id = context.user_data.get(
+        "admin_drawing_id"
+    )
+
+    subject_id = context.user_data.get(
+        "admin_drawing_subject_id"
+    )
+
+    stage_id = context.user_data.get(
+        "admin_drawing_stage_id"
+    )
+
+    section_type = context.user_data.get(
+        "admin_drawing_section_type"
+    )
+
+    name = context.user_data.get(
+        "admin_drawing_name"
+    )
+
+    description = context.user_data.get(
+        "admin_drawing_description"
+    )
+
+    if (
+        not drawing_id
+        or not subject_id
+        or not stage_id
+        or section_type not in VALID_SECTION_TYPES
+        or not name
+    ):
+        clear_drawing_conversation(
+            context
+        )
+
+        await update.message.reply_text(
+            "❌ انتهت جلسة التعديل.\n"
+            "ابدأ التعديل من لوحة الإدارة من جديد."
+        )
+
+        return ConversationHandler.END
+
+    try:
+        (
+            supabase
+            .table("drawings")
+            .update({
+                "name": name,
+                "description": description,
+                "sort_order": order,
+                "updated_at": now_iso(),
+            })
+            .eq("id", drawing_id)
+            .eq("subject_id", subject_id)
+            .execute()
+        )
+
+    except Exception as exc:
+        print(
+            f"DRAWING UPDATE ERROR: {exc}"
+        )
+
+        await update.message.reply_text(
+            "❌ حدث خطأ أثناء تعديل الرسمة."
+        )
+
+        return ConversationHandler.END
+
+    clear_drawing_conversation(
+        context
+    )
+
+    await update.message.reply_text(
+        "✅ تم تعديل بيانات الرسمة بنجاح."
+    )
+
+    return ConversationHandler.END
+
+
+# =========================
+# Enable / Disable
 # =========================
 
 async def disable_drawing(
@@ -1147,14 +1493,9 @@ async def disable_drawing(
 ):
     return await toggle_drawing(
         update,
-        context,
-        False,
+        disable=True,
     )
 
-
-# =========================
-# Enable Drawing
-# =========================
 
 async def enable_drawing(
     update: Update,
@@ -1162,22 +1503,22 @@ async def enable_drawing(
 ):
     return await toggle_drawing(
         update,
-        context,
-        True,
+        disable=False,
     )
 
 
 async def toggle_drawing(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    active,
+    disable=False,
 ):
     query = update.callback_query
 
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -1196,23 +1537,10 @@ async def toggle_drawing(
     drawing_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = normalize_section_type(parts[4])
 
-    if section_type not in VALID_SECTION_TYPES:
-        await query.answer(
-            "❌ قسم غير صالح.",
-            show_alert=True,
-        )
-        return
-
-    await query.answer()
-
-    supabase.table("drawings").update({
-        "is_active": active,
-    }).eq(
-        "id",
-        drawing_id,
-    ).execute()
+    section_type = normalize_section_type(
+        parts[4]
+    )
 
     drawing = await get_drawing(
         drawing_id,
@@ -1220,25 +1548,75 @@ async def toggle_drawing(
     )
 
     if not drawing:
-        await query.edit_message_text(
-            "❌ الرسمة غير موجودة."
+        await query.answer(
+            "❌ الرسمة غير موجودة.",
+            show_alert=True,
         )
         return
 
+    new_status = not disable
+
+    try:
+        (
+            supabase
+            .table("drawings")
+            .update({
+                "is_active": new_status,
+                "updated_at": now_iso(),
+            })
+            .eq("id", drawing_id)
+            .eq("subject_id", subject_id)
+            .execute()
+        )
+
+    except Exception as exc:
+        print(
+            f"DRAWING TOGGLE ERROR: {exc}"
+        )
+
+        await query.answer(
+            "❌ تعذر تحديث حالة الرسمة.",
+            show_alert=True,
+        )
+
+        return
+
+    await query.answer(
+        "✅ تم تحديث الحالة."
+    )
+
+    drawing = await get_drawing(
+        drawing_id,
+        subject_id,
+    )
+
+    if not drawing:
+        return
+
     status = (
-        "🟢 تم تفعيل الرسمة."
-        if active
-        else "🔴 تم تعطيل الرسمة."
+        "🟢 مفعّلة"
+        if drawing["is_active"]
+        else "🔴 معطّلة"
+    )
+
+    description = (
+        drawing.get("description")
+        or "لا يوجد"
     )
 
     await query.edit_message_text(
-        status,
+        "🎨 إدارة الرسمة\n\n"
+        f"📌 الاسم: {drawing['name']}\n"
+        f"📝 الوصف: {description}\n"
+        f"📂 القسم: {section_name(section_type)}\n"
+        f"🔢 الترتيب: {drawing.get('sort_order', 0)}\n"
+        f"📊 الحالة: {status}",
         reply_markup=drawing_manage_keyboard(
             drawing_id,
             stage_id,
             subject_id,
             section_type,
-            active,
+            drawing["is_active"],
         ),
     )
 
@@ -1256,7 +1634,9 @@ async def delete_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -1275,9 +1655,10 @@ async def delete_drawing(
     drawing_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = normalize_section_type(parts[4])
 
-    await query.answer()
+    section_type = normalize_section_type(
+        parts[4]
+    )
 
     drawing = await get_drawing(
         drawing_id,
@@ -1285,16 +1666,19 @@ async def delete_drawing(
     )
 
     if not drawing:
-        await query.edit_message_text(
-            "❌ الرسمة غير موجودة."
+        await query.answer(
+            "❌ الرسمة غير موجودة.",
+            show_alert=True,
         )
         return
 
+    await query.answer()
+
     await query.edit_message_text(
-        "⚠️ هل أنت متأكد من حذف هذه الرسمة؟\n\n"
-        f"🎨 {drawing['name']}\n\n"
-        "سيتم حذفها من ظهور الطلاب، ويمكن لاحقًا "
-        "استرجاعها من قاعدة البيانات إذا احتجنا.",
+        "⚠️ تأكيد حذف الرسمة\n\n"
+        f"هل أنت متأكد من حذف:\n"
+        f"📌 {drawing['name']}\n\n"
+        "سيتم حذفها منطقيًا من النظام.",
         reply_markup=delete_confirm_keyboard(
             drawing_id,
             stage_id,
@@ -1313,7 +1697,9 @@ async def confirm_delete_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await is_admin(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -1332,22 +1718,88 @@ async def confirm_delete_drawing(
     drawing_id = parts[1]
     stage_id = parts[2]
     subject_id = parts[3]
-    section_type = normalize_section_type(parts[4])
 
-    await query.answer()
+    section_type = normalize_section_type(
+        parts[4]
+    )
 
-    supabase.table("drawings").update({
-        "deleted_at": "now()",
-        "is_active": False,
-    }).eq(
-        "id",
-        drawing_id,
-    ).execute()
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ قسم غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        timestamp = now_iso()
+
+        (
+            supabase
+            .table("drawings")
+            .update({
+                "deleted_at": timestamp,
+                "is_active": False,
+                "updated_at": timestamp,
+            })
+            .eq("id", drawing_id)
+            .eq("subject_id", subject_id)
+            .execute()
+        )
+
+    except Exception as exc:
+        print(
+            f"DRAWING DELETE ERROR: {exc}"
+        )
+
+        await query.answer(
+            "❌ تعذر حذف الرسمة.",
+            show_alert=True,
+        )
+
+        return
+
+    await query.answer(
+        "✅ تم حذف الرسمة."
+    )
+
+    drawings = await get_drawings(
+        subject_id,
+        section_type,
+        include_inactive=True,
+    )
 
     await query.edit_message_text(
-        "✅ تم حذف الرسمة بنجاح.\n\n"
-        "تم استخدام الحذف المنطقي للحفاظ على البيانات."
+        "🎨 إدارة الرسومات\n"
+        f"{section_name(section_type)}\n\n"
+        f"عدد الرسومات: {len(drawings)}\n\n"
+        "اختر رسمة أو أضف رسمة جديدة:",
+        reply_markup=drawing_list_keyboard(
+            drawings,
+            stage_id,
+            subject_id,
+            section_type,
+        ),
     )
+
+
+# =========================
+# Cancel
+# =========================
+
+async def cancel_drawing(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    clear_drawing_conversation(
+        context
+    )
+
+    if update.message:
+        await update.message.reply_text(
+            "❌ تم إلغاء العملية."
+        )
+
+    return ConversationHandler.END
 
 
 # =========================
@@ -1361,33 +1813,76 @@ def drawing_conversation_handler():
                 start_add_drawing,
                 pattern=r"^add_drawing:",
             ),
+            CallbackQueryHandler(
+                start_edit_drawing,
+                pattern=r"^edit_drawing:",
+            ),
         ],
+
         states={
+
             ADD_DRAWING_NAME: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
+                    filters.TEXT
+                    & ~filters.COMMAND,
                     receive_drawing_name,
-                ),
+                )
             ],
+
             ADD_DRAWING_DESCRIPTION: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
+                    filters.TEXT
+                    & ~filters.COMMAND,
                     receive_drawing_description,
-                ),
+                )
             ],
+
             ADD_DRAWING_ORDER: [
                 MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
+                    filters.TEXT
+                    & ~filters.COMMAND,
                     receive_drawing_order,
-                ),
+                )
             ],
+
             ADD_DRAWING_UPLOAD: [
                 MessageHandler(
                     filters.ATTACHMENT,
                     receive_drawing_upload,
-                ),
+                )
+            ],
+
+            EDIT_DRAWING_NAME: [
+                MessageHandler(
+                    filters.TEXT
+                    & ~filters.COMMAND,
+                    receive_edit_drawing_name,
+                )
+            ],
+
+            EDIT_DRAWING_DESCRIPTION: [
+                MessageHandler(
+                    filters.TEXT
+                    & ~filters.COMMAND,
+                    receive_edit_drawing_description,
+                )
+            ],
+
+            EDIT_DRAWING_ORDER: [
+                MessageHandler(
+                    filters.TEXT
+                    & ~filters.COMMAND,
+                    receive_edit_drawing_order,
+                )
             ],
         },
-        fallbacks=[],
+
+        fallbacks=[
+            CommandHandler(
+                "cancel",
+                cancel_drawing,
+            )
+        ],
+
         allow_reentry=True,
     )
