@@ -5,38 +5,26 @@ def content_keyboard(subject_id, user_id, stage_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="📄 الملفات",
-                callback_data=(
-                    f"content:files:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📄 الملفات",
+                callback_data=f"content:files:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="📝 الملخصات",
-                callback_data=(
-                    f"content:summaries:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📝 الملخصات",
+                callback_data=f"content:summaries:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🎨 الرسومات",
-                callback_data=(
-                    f"content:drawings:"
-                    f"{subject_id}:{user_id}"
-                )
+                "🎨 الرسومات",
+                callback_data=f"content:drawings:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ رجوع للمواد",
-                callback_data=(
-                    f"back_subjects:"
-                    f"{stage_id}:{user_id}"
-                )
+                "⬅️ رجوع للمواد",
+                callback_data=f"back_subjects:{stage_id}:{user_id}",
             )
         ],
     ])
@@ -46,38 +34,26 @@ def files_section_keyboard(subject_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="📖 النظري",
-                callback_data=(
-                    f"files_section:theoretical:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📖 النظري",
+                callback_data=f"files_section:theoretical:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🧪 العملي",
-                callback_data=(
-                    f"files_section:practical:"
-                    f"{subject_id}:{user_id}"
-                )
+                "🧪 العملي",
+                callback_data=f"files_section:practical:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="📚 جميع الملفات",
-                callback_data=(
-                    f"content:files:all:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📚 جميع الملفات",
+                callback_data=f"content:files:all:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ رجوع للمادة",
-                callback_data=(
-                    f"back_content:"
-                    f"{subject_id}:{user_id}"
-                )
+                "⬅️ رجوع للمادة",
+                callback_data=f"back_content:{subject_id}:{user_id}",
             )
         ],
     ])
@@ -87,38 +63,43 @@ def summaries_section_keyboard(subject_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="📖 النظري",
-                callback_data=(
-                    f"summaries_section:theoretical:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📖 النظري",
+                callback_data=f"summaries_section:theoretical:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🧪 العملي",
-                callback_data=(
-                    f"summaries_section:practical:"
-                    f"{subject_id}:{user_id}"
-                )
+                "🧪 العملي",
+                callback_data=f"summaries_section:practical:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="📚 جميع الملخصات",
-                callback_data=(
-                    f"content:summaries:all:"
-                    f"{subject_id}:{user_id}"
-                )
+                "📚 جميع الملخصات",
+                callback_data=f"content:summaries:all:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ رجوع للمادة",
-                callback_data=(
-                    f"back_content:"
-                    f"{subject_id}:{user_id}"
-                )
+                "⬅️ رجوع للمادة",
+                callback_data=f"back_content:{subject_id}:{user_id}",
+            )
+        ],
+    ])
+
+
+def drawings_section_keyboard(subject_id, user_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "📚 جميع الرسومات",
+                callback_data=f"content:drawings:all:{subject_id}:{user_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⬅️ رجوع للمادة",
+                callback_data=f"back_content:{subject_id}:{user_id}",
             )
         ],
     ])
