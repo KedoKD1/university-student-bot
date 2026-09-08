@@ -57,6 +57,47 @@ def back_content_keyboard(subject_id, owner_id):
     ])
 
 
+async def send_content_item(message, item, icon):
+    telegram_file_id = item.get("telegram_file_id")
+
+    if not telegram_file_id:
+        return False
+
+    caption = build_caption(
+        icon,
+        item.get("name"),
+        item.get("description"),
+    )
+
+    file_type = item.get("file_type")
+
+    if file_type == "photo":
+        await message.reply_photo(
+            photo=telegram_file_id,
+            caption=caption,
+        )
+
+    elif file_type == "video":
+        await message.reply_video(
+            video=telegram_file_id,
+            caption=caption,
+        )
+
+    elif file_type == "audio":
+        await message.reply_audio(
+            audio=telegram_file_id,
+            caption=caption,
+        )
+
+    else:
+        await message.reply_document(
+            document=telegram_file_id,
+            caption=caption,
+        )
+
+    return True
+
+
 async def show_files(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -68,15 +109,25 @@ async def show_files(
 
     parts = query.data.split(":")
 
-    if len(parts) != 4:
+    # content:files:subject_id:user_id
+    # content:files:all:subject_id:user_id
+
+    if len(parts) == 4:
+        subject_id = parts[2]
+        owner_id = parts[3]
+        show_all = False
+
+    elif len(parts) == 5 and parts[2] == "all":
+        subject_id = parts[3]
+        owner_id = parts[4]
+        show_all = True
+
+    else:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
-
-    subject_id = parts[2]
-    owner_id = parts[3]
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
@@ -86,6 +137,86 @@ async def show_files(
         return
 
     await query.answer()
+
+    # =========================
+    # جميع الملفات
+    # =========================
+
+    if show_all:
+        response = (
+            supabase
+            .table("files")
+            .select("*")
+            .eq("subject_id", subject_id)
+            .eq("is_active", True)
+            .is_("deleted_at", "null")
+            .order("sort_order")
+            .execute()
+        )
+
+        files = response.data or []
+
+        if not files:
+            await query.edit_message_text(
+                "📚 جميع الملفات\n\n"
+                "⚠️ لا توجد ملفات مضافة لهذه المادة حاليًا.",
+                reply_markup=back_content_keyboard(
+                    subject_id,
+                    owner_id,
+                ),
+            )
+            return
+
+        await query.edit_message_text(
+            "📚 جميع الملفات\n\n"
+            "⏳ جاري إرسال الملفات النظرية والعملية..."
+        )
+
+        sent_count = 0
+        failed_count = 0
+
+        for file in files:
+            try:
+                sent = await send_content_item(
+                    query.message,
+                    file,
+                    "📄",
+                )
+
+                if sent:
+                    sent_count += 1
+                else:
+                    failed_count += 1
+
+            except Exception as exc:
+                print(
+                    f"ALL FILES SEND ERROR: {exc}"
+                )
+                failed_count += 1
+
+        result_text = (
+            "📚 تم إرسال جميع الملفات.\n\n"
+            f"✅ تم إرسال: {sent_count}"
+        )
+
+        if failed_count:
+            result_text += (
+                f"\n⚠️ تعذر إرسال: {failed_count}"
+            )
+
+        await query.message.reply_text(
+            result_text,
+            reply_markup=back_content_keyboard(
+                subject_id,
+                owner_id,
+            ),
+        )
+
+        return
+
+    # =========================
+    # قائمة الملفات
+    # =========================
 
     await query.edit_message_text(
         "📄 الملفات\n\n"
@@ -161,11 +292,18 @@ async def show_file_section(
     if not files:
         await query.edit_message_text(
             f"📄 الملفات — {section_name}\n\n"
-            "لا توجد ملفات مضافة لهذا القسم حالياً.",
-            reply_markup=back_content_keyboard(
-                subject_id,
-                owner_id,
-            ),
+            "لا توجد ملفات مضافة لهذا القسم حاليًا.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "⬅️ رجوع للملفات",
+                        callback_data=(
+                            f"content:files:"
+                            f"{subject_id}:{owner_id}"
+                        ),
+                    )
+                ]
+            ]),
         )
         return
 
@@ -176,7 +314,9 @@ async def show_file_section(
             InlineKeyboardButton(
                 text=f"📄 {file['name']}",
                 callback_data=(
-                    f"file:{file['id']}:{owner_id}"
+                    f"file:"
+                    f"{file['id']}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -249,50 +389,29 @@ async def file_button(
 
     file = files[0]
 
-    telegram_file_id = file.get(
-        "telegram_file_id"
-    )
+    try:
+        sent = await send_content_item(
+            query.message,
+            file,
+            "📄",
+        )
 
-    if not telegram_file_id:
+        if not sent:
+            await query.message.reply_text(
+                "⚠️ هذا الملف غير مرتبط بملف Telegram."
+            )
+
+    except Exception as exc:
+        print(
+            f"FILE SEND ERROR: {exc}"
+        )
+
         await query.message.reply_text(
-            "⚠️ هذا الملف لم يتم ربطه بملف Telegram بعد."
-        )
-        return
-
-    caption = build_caption(
-        "📄",
-        file.get("name"),
-        file.get("description"),
-    )
-
-    file_type = file.get("file_type")
-
-    if file_type == "photo":
-        await query.message.reply_photo(
-            photo=telegram_file_id,
-            caption=caption,
-        )
-
-    elif file_type == "video":
-        await query.message.reply_video(
-            video=telegram_file_id,
-            caption=caption,
-        )
-
-    elif file_type == "audio":
-        await query.message.reply_audio(
-            audio=telegram_file_id,
-            caption=caption,
-        )
-
-    else:
-        await query.message.reply_document(
-            document=telegram_file_id,
-            caption=caption,
+            "❌ حدث خطأ أثناء إرسال الملف."
         )
 
 
-async def show_summaries(
+async def show_summaries_or_drawings(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
@@ -310,6 +429,7 @@ async def show_summaries(
         )
         return
 
+    content_type = parts[1]
     subject_id = parts[2]
     owner_id = parts[3]
 
@@ -320,15 +440,38 @@ async def show_summaries(
         )
         return
 
-    await query.answer()
+    # =========================
+    # الملخصات
+    # =========================
 
-    await query.edit_message_text(
-        "📝 الملخصات\n\n"
-        "اختر القسم:",
-        reply_markup=summaries_section_keyboard(
-            subject_id,
-            query.from_user.id,
-        ),
+    if content_type == "summaries":
+        await query.answer()
+
+        await query.edit_message_text(
+            "📝 الملخصات\n\n"
+            "اختر القسم:",
+            reply_markup=summaries_section_keyboard(
+                subject_id,
+                query.from_user.id,
+            ),
+        )
+
+        return
+
+    # =========================
+    # الرسومات
+    # =========================
+
+    if content_type == "drawings":
+        await show_drawings(
+            update,
+            context,
+        )
+        return
+
+    await query.answer(
+        "❌ القسم غير صالح.",
+        show_alert=True,
     )
 
 
@@ -396,7 +539,7 @@ async def show_summary_section(
     if not summaries:
         await query.edit_message_text(
             f"📝 الملخصات — {section_name}\n\n"
-            "لا توجد ملخصات مضافة لهذا القسم حالياً.",
+            "لا توجد ملخصات مضافة لهذا القسم حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -441,6 +584,113 @@ async def show_summary_section(
         f"📝 الملخصات — {section_name}\n\n"
         "اختر الملخص:",
         reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def show_all_summaries(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    # content:summaries:all:subject_id:user_id
+
+    if (
+        len(parts) != 5
+        or parts[0] != "content"
+        or parts[1] != "summaries"
+        or parts[2] != "all"
+    ):
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    subject_id = parts[3]
+    owner_id = parts[4]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table("summaries")
+        .select("*")
+        .eq("subject_id", subject_id)
+        .eq("is_active", True)
+        .is_("deleted_at", "null")
+        .order("sort_order")
+        .execute()
+    )
+
+    summaries = response.data or []
+
+    if not summaries:
+        await query.edit_message_text(
+            "📚 جميع الملخصات\n\n"
+            "⚠️ لا توجد ملخصات مضافة لهذه المادة حاليًا.",
+            reply_markup=back_content_keyboard(
+                subject_id,
+                owner_id,
+            ),
+        )
+        return
+
+    await query.edit_message_text(
+        "📚 جميع الملخصات\n\n"
+        "⏳ جاري إرسال الملخصات النظرية والعملية..."
+    )
+
+    sent_count = 0
+    failed_count = 0
+
+    for item in summaries:
+        try:
+            sent = await send_content_item(
+                query.message,
+                item,
+                "📝",
+            )
+
+            if sent:
+                sent_count += 1
+            else:
+                failed_count += 1
+
+        except Exception as exc:
+            print(
+                f"ALL SUMMARIES SEND ERROR: {exc}"
+            )
+            failed_count += 1
+
+    result_text = (
+        "📚 تم إرسال جميع الملخصات.\n\n"
+        f"✅ تم إرسال: {sent_count}"
+    )
+
+    if failed_count:
+        result_text += (
+            f"\n⚠️ تعذر إرسال: {failed_count}"
+        )
+
+    await query.message.reply_text(
+        result_text,
+        reply_markup=back_content_keyboard(
+            subject_id,
+            owner_id,
+        ),
     )
 
 
@@ -490,7 +740,7 @@ async def show_drawings(
     if not drawings:
         await query.edit_message_text(
             "🎨 الرسومات\n\n"
-            "لا توجد رسومات مضافة حالياً.",
+            "لا توجد رسومات مضافة حاليًا.",
             reply_markup=back_content_keyboard(
                 subject_id,
                 owner_id,
@@ -600,65 +850,26 @@ async def study_item_button(
 
     item = items[0]
 
-    telegram_file_id = item.get(
-        "telegram_file_id"
-    )
+    try:
+        sent = await send_content_item(
+            query.message,
+            item,
+            icon,
+        )
 
-    if not telegram_file_id:
+        if not sent:
+            await query.message.reply_text(
+                "⚠️ هذا المحتوى غير مرتبط بملف Telegram."
+            )
+
+    except Exception as exc:
+        print(
+            f"STUDY ITEM SEND ERROR: {exc}"
+        )
+
         await query.message.reply_text(
-            "⚠️ هذا المحتوى غير مرتبط بملف Telegram."
+            "❌ حدث خطأ أثناء إرسال المحتوى."
         )
-        return
-
-    caption = build_caption(
-        icon,
-        item.get("name"),
-        item.get("description"),
-    )
-
-    file_type = item.get("file_type")
-
-    if file_type == "photo":
-        await query.message.reply_photo(
-            photo=telegram_file_id,
-            caption=caption,
-        )
-
-    elif file_type == "video":
-        await query.message.reply_video(
-            video=telegram_file_id,
-            caption=caption,
-        )
-
-    elif file_type == "audio":
-        await query.message.reply_audio(
-            audio=telegram_file_id,
-            caption=caption,
-        )
-
-    else:
-        await query.message.reply_document(
-            document=telegram_file_id,
-            caption=caption,
-        )
-
-
-async def show_summaries_or_drawings(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if query is None:
-        return
-
-    if query.data.startswith("content:summaries:"):
-        await show_summaries(update, context)
-        return
-
-    if query.data.startswith("content:drawings:"):
-        await show_drawings(update, context)
-        return
 
 
 async def back_to_content(
@@ -709,7 +920,6 @@ async def back_to_content(
         return
 
     subject = subjects[0]
-
     stage_id = subject.get("stage_id")
 
     if stage_id is None:
@@ -723,7 +933,7 @@ async def back_to_content(
 
     description = (
         subject.get("description")
-        or "لا يوجد وصف للمادة حالياً."
+        or "لا يوجد وصف للمادة حاليًا."
     )
 
     await query.edit_message_text(
