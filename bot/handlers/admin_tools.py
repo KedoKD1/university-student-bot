@@ -3,6 +3,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -14,11 +15,9 @@ from telegram.ext import (
 
 from bot.database.client import supabase
 from bot.handlers.admin import is_admin
-from bot.utils.config import STUDENT_GROUP_ID
 
 
-BROADCAST_DESCRIPTION = 1
-ROLE_USER_ID = 10
+ROLE_USERNAME = 10
 
 
 ROLE_NAMES = {
@@ -59,24 +58,6 @@ def tools_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "📤 إرسال جميع الملفات",
-                callback_data="bulk_files",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📤 إرسال جميع الملخصات",
-                callback_data="bulk_summaries",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📤 إرسال جميع الرسومات",
-                callback_data="bulk_drawings",
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 "📊 حالة البوت",
                 callback_data="bot_status",
             )
@@ -85,6 +66,12 @@ def tools_keyboard():
             InlineKeyboardButton(
                 "👥 إدارة المشرفين",
                 callback_data="admin_roles",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "📝 أوصاف الإرسال",
+                callback_data="bundle_descriptions",
             )
         ],
         [
@@ -121,299 +108,6 @@ async def admin_tools(
     )
 
 
-async def start_bulk_send(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if query is None or query.from_user is None:
-        return ConversationHandler.END
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
-
-    parts = query.data.split(":")
-
-    if len(parts) != 1:
-        content_type = parts[0]
-    else:
-        content_type = query.data
-
-    if content_type == "bulk_files":
-        table = "files"
-        title = "الملفات"
-    elif content_type == "bulk_summaries":
-        table = "summaries"
-        title = "الملخصات"
-    elif content_type == "bulk_drawings":
-        table = "drawings"
-        title = "الرسومات"
-    else:
-        await query.answer(
-            "❌ نوع الإرسال غير صالح.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
-
-    context.user_data["bulk_table"] = table
-    context.user_data["bulk_title"] = title
-
-    await query.answer()
-
-    await query.edit_message_text(
-        f"📤 إرسال جميع {title}\n\n"
-        "أرسل الآن الوصف أو النص الذي تريد "
-        "إظهاره مع الإرسال.\n\n"
-        "إذا ما تريد وصف، اكتب:\n"
-        "بدون وصف"
-    )
-
-    return BROADCAST_DESCRIPTION
-
-
-async def receive_bulk_description(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if update.message is None:
-        return BROADCAST_DESCRIPTION
-
-    description = (
-        update.message.text or ""
-    ).strip()
-
-    if description == "بدون وصف":
-        description = ""
-
-    table = context.user_data.get(
-        "bulk_table"
-    )
-
-    title = context.user_data.get(
-        "bulk_title",
-        "المحتويات",
-    )
-
-    if not table:
-        await update.message.reply_text(
-            "❌ انتهت بيانات العملية."
-        )
-        return ConversationHandler.END
-
-    if not STUDENT_GROUP_ID:
-        await update.message.reply_text(
-            "❌ STUDENT_GROUP_ID غير موجود "
-            "في Environment Variables."
-        )
-        return ConversationHandler.END
-
-    try:
-        chat_id = int(STUDENT_GROUP_ID)
-    except ValueError:
-        await update.message.reply_text(
-            "❌ قيمة STUDENT_GROUP_ID غير صحيحة."
-        )
-        return ConversationHandler.END
-
-    try:
-        response = (
-            supabase
-            .table(table)
-            .select("*")
-            .eq("is_active", True)
-            .is_("deleted_at", "null")
-            .order("sort_order")
-            .execute()
-        )
-
-        items = response.data or []
-
-        if not items:
-            await update.message.reply_text(
-                f"⚠️ لا توجد {title} مضافة حالياً."
-            )
-            return ConversationHandler.END
-
-        await update.message.reply_text(
-            f"⏳ جارٍ إرسال جميع {title}...\n"
-            f"العدد: {len(items)}"
-        )
-
-        sent = 0
-        failed = 0
-
-        if description:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=description,
-                )
-            except Exception as exc:
-                print(
-                    "BROADCAST DESCRIPTION ERROR:",
-                    exc,
-                )
-
-        for item in items:
-            file_id = item.get(
-                "telegram_file_id"
-            )
-
-            if not file_id:
-                failed += 1
-                continue
-
-            caption = (
-                item.get("name")
-                or title
-            )
-
-            item_description = (
-                item.get("description")
-                or ""
-            ).strip()
-
-            if item_description:
-                caption += (
-                    f"\n\n📝 {item_description}"
-                )
-
-            if len(caption) > 1024:
-                caption = (
-                    caption[:1021] + "..."
-                )
-
-            file_type = item.get(
-                "file_type"
-            )
-
-            try:
-                if file_type == "photo":
-                    await context.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=file_id,
-                        caption=caption,
-                    )
-
-                elif file_type == "video":
-                    await context.bot.send_video(
-                        chat_id=chat_id,
-                        video=file_id,
-                        caption=caption,
-                    )
-
-                elif file_type == "audio":
-                    await context.bot.send_audio(
-                        chat_id=chat_id,
-                        audio=file_id,
-                        caption=caption,
-                    )
-
-                else:
-                    await context.bot.send_document(
-                        chat_id=chat_id,
-                        document=file_id,
-                        caption=caption,
-                    )
-
-                sent += 1
-
-            except Exception as exc:
-                failed += 1
-
-                print(
-                    "BROADCAST ITEM ERROR:",
-                    type(exc).__name__,
-                    exc,
-                )
-
-        await update.message.reply_text(
-            "✅ اكتمل الإرسال.\n\n"
-            f"📦 القسم: {title}\n"
-            f"✅ تم الإرسال: {sent}\n"
-            f"❌ فشل: {failed}"
-        )
-
-    except Exception as exc:
-        print(
-            "BROADCAST ERROR:",
-            type(exc).__name__,
-            exc,
-        )
-
-        await update.message.reply_text(
-            "❌ حدث خطأ أثناء الإرسال.\n"
-            "راجع Railway Logs."
-        )
-
-    context.user_data.pop(
-        "bulk_table",
-        None,
-    )
-    context.user_data.pop(
-        "bulk_title",
-        None,
-    )
-
-    return ConversationHandler.END
-
-
-async def cancel_bulk(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    context.user_data.pop(
-        "bulk_table",
-        None,
-    )
-    context.user_data.pop(
-        "bulk_title",
-        None,
-    )
-
-    if update.message:
-        await update.message.reply_text(
-            "❌ تم إلغاء الإرسال."
-        )
-
-    return ConversationHandler.END
-
-
-def bulk_conversation_handler():
-    return ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(
-                start_bulk_send,
-                pattern=(
-                    r"^bulk_"
-                    r"(files|summaries|drawings)$"
-                ),
-            )
-        ],
-        states={
-            BROADCAST_DESCRIPTION: [
-                MessageHandler(
-                    filters.TEXT
-                    & ~filters.COMMAND,
-                    receive_bulk_description,
-                )
-            ]
-        },
-        fallbacks=[
-            CommandHandler(
-                "cancel",
-                cancel_bulk,
-            )
-        ],
-        allow_reentry=True,
-    )
-
-
 async def bot_status(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -432,11 +126,17 @@ async def bot_status(
 
     await query.answer()
 
-    def count_rows(table, active_only=False):
+    def count_rows(
+        table,
+        active_only=False,
+    ):
         builder = (
             supabase
             .table(table)
-            .select("id", count="exact")
+            .select(
+                "id",
+                count="exact",
+            )
         )
 
         if active_only:
@@ -452,26 +152,32 @@ async def bot_status(
             return 0
 
     users = count_rows("users")
+
     admins = count_rows(
         "admins",
         active_only=True,
     )
+
     files = count_rows(
         "files",
         active_only=True,
     )
+
     summaries = count_rows(
         "summaries",
         active_only=True,
     )
+
     drawings = count_rows(
         "drawings",
         active_only=True,
     )
+
     schedules = count_rows(
         "schedules",
         active_only=True,
     )
+
     chats = count_rows(
         "bot_chats",
         active_only=True,
@@ -495,8 +201,10 @@ async def bot_status(
 
             if role == "owner":
                 owner_count += 1
+
             elif role == "admin":
                 admin_count += 1
+
             elif role == "moderator":
                 moderator_count += 1
 
@@ -571,6 +279,31 @@ async def admin_roles(
 
     admins = response.data or []
 
+    usernames = {}
+
+    try:
+        users_response = (
+            supabase
+            .table("telegram_users")
+            .select(
+                "telegram_id, username"
+            )
+            .execute()
+        )
+
+        usernames = {
+            str(row["telegram_id"]): row.get(
+                "username"
+            )
+            for row in (
+                users_response.data or []
+            )
+            if row.get("username")
+        }
+
+    except Exception:
+        pass
+
     keyboard = [
         [
             InlineKeyboardButton(
@@ -581,16 +314,34 @@ async def admin_roles(
     ]
 
     for admin in admins:
-        role = admin.get("role", "moderator")
+        role = admin.get(
+            "role",
+            "moderator",
+        )
+
+        telegram_id = str(
+            admin["telegram_id"]
+        )
+
+        username = usernames.get(
+            telegram_id
+        )
+
+        identity = (
+            f"@{username}"
+            if username
+            else telegram_id
+        )
 
         keyboard.append([
             InlineKeyboardButton(
                 text=(
-                    f"{ROLE_NAMES.get(role, role)} "
-                    f"• {admin['telegram_id']}"
+                    f"{ROLE_NAMES.get(role, role)}"
+                    f" • {identity}"
                 ),
                 callback_data=(
-                    f"role_manage:{admin['id']}"
+                    f"role_manage:"
+                    f"{admin['id']}"
                 ),
             )
         ])
@@ -605,7 +356,9 @@ async def admin_roles(
     await query.edit_message_text(
         "👥 إدارة المشرفين\n\n"
         "اختر المشرف:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -618,7 +371,9 @@ async def role_add_start(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
@@ -629,35 +384,116 @@ async def role_add_start(
 
     await query.edit_message_text(
         "➕ إضافة مشرف\n\n"
-        "أرسل Telegram ID للشخص الذي تريد إعطائه رتبة:"
+        "أرسل Username الخاص بالشخص.\n"
+        "مثال: @username\n\n"
+        "⚠️ لازم الشخص يكون قد استخدم "
+        "البوت مرة واحدة على الأقل حتى "
+        "أگدر أتعرف عليه."
     )
 
-    return ROLE_USER_ID
+    return ROLE_USERNAME
 
 
-async def role_receive_user_id(
+async def role_receive_username(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     if update.message is None:
-        return ConversationHandler.END
+        return ROLE_USERNAME
+
+    username = (
+        update.message.text or ""
+    ).strip()
+
+    username = username.lstrip(
+        "@"
+    ).strip()
+
+    if not username or " " in username:
+        await update.message.reply_text(
+            "❌ Username غير صحيح.\n"
+            "أرسله بهذا الشكل:\n"
+            "@username"
+        )
+
+        return ROLE_USERNAME
 
     try:
-        telegram_id = int(
-            update.message.text.strip()
+        response = (
+            supabase
+            .table("telegram_users")
+            .select(
+                "telegram_id, username, "
+                "first_name, last_name"
+            )
+            .ilike(
+                "username",
+                username,
+            )
+            .limit(1)
+            .execute()
         )
-    except ValueError:
+
+    except Exception as exc:
+        print(
+            "ROLE USERNAME LOOKUP ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
         await update.message.reply_text(
-            "❌ Telegram ID غير صحيح.\n"
-            "أرسله كرقم فقط:"
+            "❌ تعذر البحث عن Username.\n"
+            "تأكد أن جدول telegram_users موجود."
         )
-        return ROLE_USER_ID
+
+        return ConversationHandler.END
+
+    rows = response.data or []
+
+    if not rows:
+        await update.message.reply_text(
+            "❌ ما لكيت هذا Username.\n\n"
+            "تأكد من كتابته صحيح، وتأكد أن "
+            "الشخص استخدم البوت مرة واحدة "
+            "على الأقل."
+        )
+
+        return ROLE_USERNAME
+
+    target_id = rows[0]["telegram_id"]
+
+    target_username = (
+        rows[0].get("username")
+        or username
+    )
+
+    target_name = " ".join(
+        part
+        for part in [
+            rows[0].get("first_name"),
+            rows[0].get("last_name"),
+        ]
+        if part
+    ).strip()
 
     context.user_data[
         "role_target_id"
-    ] = telegram_id
+    ] = target_id
+
+    context.user_data[
+        "role_target_username"
+    ] = target_username
+
+    name_line = (
+        f"👤 الاسم: {target_name}\n"
+        if target_name
+        else ""
+    )
 
     await update.message.reply_text(
+        "👤 تم العثور على المستخدم.\n\n"
+        f"@{target_username}\n"
+        f"{name_line}\n"
         "اختر الرتبة:",
         reply_markup=InlineKeyboardMarkup([
             [
@@ -693,7 +529,9 @@ async def set_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
@@ -704,6 +542,13 @@ async def set_role(
         "role_target_id"
     )
 
+    target_username = (
+        context.user_data.get(
+            "role_target_username",
+            "المستخدم",
+        )
+    )
+
     if not target_id:
         await query.answer(
             "❌ لم يتم تحديد المستخدم.",
@@ -711,7 +556,10 @@ async def set_role(
         )
         return
 
-    role = query.data.split(":")[1]
+    role = query.data.split(
+        ":",
+        1,
+    )[1]
 
     try:
         existing = (
@@ -729,20 +577,31 @@ async def set_role(
         rows = existing.data or []
 
         if rows:
-            supabase.table("admins").update({
-                "role": role,
-                "is_active": True,
-            }).eq(
-                "id",
-                rows[0]["id"],
-            ).execute()
+            (
+                supabase
+                .table("admins")
+                .update({
+                    "role": role,
+                    "is_active": True,
+                })
+                .eq(
+                    "id",
+                    rows[0]["id"],
+                )
+                .execute()
+            )
 
         else:
-            supabase.table("admins").insert({
-                "telegram_id": target_id,
-                "role": role,
-                "is_active": True,
-            }).execute()
+            (
+                supabase
+                .table("admins")
+                .insert({
+                    "telegram_id": target_id,
+                    "role": role,
+                    "is_active": True,
+                })
+                .execute()
+            )
 
     except Exception as exc:
         print(
@@ -755,6 +614,7 @@ async def set_role(
             "❌ تعذر حفظ الرتبة.",
             show_alert=True,
         )
+
         return
 
     context.user_data.pop(
@@ -762,8 +622,17 @@ async def set_role(
         None,
     )
 
+    context.user_data.pop(
+        "role_target_username",
+        None,
+    )
+
     await query.answer(
-        "✅ تم حفظ الرتبة.",
+        (
+            f"✅ تم إعطاء "
+            f"{ROLE_NAMES.get(role, role)} "
+            f"لـ @{target_username}."
+        ),
         show_alert=True,
     )
 
@@ -782,14 +651,19 @@ async def role_manage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
         )
         return
 
-    admin_id = query.data.split(":")[1]
+    admin_id = query.data.split(
+        ":",
+        1,
+    )[1]
 
     response = (
         supabase
@@ -813,11 +687,41 @@ async def role_manage(
 
     admin = rows[0]
 
+    username = None
+
+    try:
+        user_response = (
+            supabase
+            .table("telegram_users")
+            .select("username")
+            .eq(
+                "telegram_id",
+                admin["telegram_id"],
+            )
+            .limit(1)
+            .execute()
+        )
+
+        if user_response.data:
+            username = (
+                user_response.data[0]
+                .get("username")
+            )
+
+    except Exception:
+        pass
+
+    identity = (
+        f"@{username}"
+        if username
+        else str(admin["telegram_id"])
+    )
+
     await query.answer()
 
     await query.edit_message_text(
         "👤 إدارة المشرف\n\n"
-        f"🆔 ID: {admin['telegram_id']}\n"
+        f"👤 المستخدم: {identity}\n"
         f"🏷️ الرتبة: "
         f"{ROLE_NAMES.get(admin['role'], admin['role'])}\n\n"
         "اختر العملية:",
@@ -868,7 +772,9 @@ async def change_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
@@ -881,13 +787,19 @@ async def change_role(
     role = parts[2]
 
     try:
-        supabase.table("admins").update({
-            "role": role,
-            "is_active": True,
-        }).eq(
-            "id",
-            admin_id,
-        ).execute()
+        (
+            supabase
+            .table("admins")
+            .update({
+                "role": role,
+                "is_active": True,
+            })
+            .eq(
+                "id",
+                admin_id,
+            )
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -899,6 +811,7 @@ async def change_role(
             "❌ تعذر تغيير الرتبة.",
             show_alert=True,
         )
+
         return
 
     await query.answer(
@@ -921,22 +834,33 @@ async def remove_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
         )
         return
 
-    admin_id = query.data.split(":")[1]
+    admin_id = query.data.split(
+        ":",
+        1,
+    )[1]
 
     try:
-        supabase.table("admins").update({
-            "is_active": False,
-        }).eq(
-            "id",
-            admin_id,
-        ).execute()
+        (
+            supabase
+            .table("admins")
+            .update({
+                "is_active": False,
+            })
+            .eq(
+                "id",
+                admin_id,
+            )
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -948,6 +872,7 @@ async def remove_role(
             "❌ تعذر إزالة الرتبة.",
             show_alert=True,
         )
+
         return
 
     await query.answer(
@@ -970,6 +895,11 @@ async def cancel_role(
         None,
     )
 
+    context.user_data.pop(
+        "role_target_username",
+        None,
+    )
+
     if update.message:
         await update.message.reply_text(
             "❌ تم إلغاء العملية."
@@ -987,11 +917,11 @@ def role_conversation_handler():
             )
         ],
         states={
-            ROLE_USER_ID: [
+            ROLE_USERNAME: [
                 MessageHandler(
                     filters.TEXT
                     & ~filters.COMMAND,
-                    role_receive_user_id,
+                    role_receive_username,
                 )
             ]
         },
