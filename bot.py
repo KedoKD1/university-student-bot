@@ -346,30 +346,30 @@ def main():
     )
 
 
-# =========================
-# Student Summaries
-# =========================
+    # =========================
+    # Student Summaries
+    # =========================
 
-application.add_handler(
-    CallbackQueryHandler(
-        show_all_summaries,
-        pattern=r"^content:summaries:all:",
+    application.add_handler(
+        CallbackQueryHandler(
+            show_all_summaries,
+            pattern=r"^content:summaries:all:",
+        )
     )
-)
 
-application.add_handler(
-    CallbackQueryHandler(
-        show_summaries_or_drawings,
-        pattern=r"^content:summaries:",
+    application.add_handler(
+        CallbackQueryHandler(
+            show_summaries_or_drawings,
+            pattern=r"^content:summaries:",
+        )
     )
-)
 
-application.add_handler(
-    CallbackQueryHandler(
-        show_summary_section,
-        pattern=r"^summaries_section:",
+    application.add_handler(
+        CallbackQueryHandler(
+            show_summary_section,
+            pattern=r"^summaries_section:",
+        )
     )
-)
 
 
     # =========================
