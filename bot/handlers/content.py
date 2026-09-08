@@ -9,6 +9,7 @@ from bot.database.client import supabase
 from bot.keyboards.content import (
     content_keyboard,
     files_section_keyboard,
+    summaries_section_keyboard,
 )
 
 
@@ -40,6 +41,20 @@ def owner_error():
         "⛔ هذا الاختيار مو إلك.\n"
         "استخدم /start حتى تحصل على قائمتك الخاصة."
     )
+
+
+def back_content_keyboard(subject_id, owner_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "⬅️ رجوع للمادة",
+                callback_data=(
+                    f"back_content:"
+                    f"{subject_id}:{owner_id}"
+                ),
+            )
+        ]
+    ])
 
 
 async def show_files(
@@ -147,17 +162,10 @@ async def show_file_section(
         await query.edit_message_text(
             f"📄 الملفات — {section_name}\n\n"
             "لا توجد ملفات مضافة لهذا القسم حالياً.",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "⬅️ رجوع للملفات",
-                        callback_data=(
-                            f"content:files:"
-                            f"{subject_id}:{owner_id}"
-                        ),
-                    )
-                ]
-            ]),
+            reply_markup=back_content_keyboard(
+                subject_id,
+                owner_id,
+            ),
         )
         return
 
@@ -241,7 +249,9 @@ async def file_button(
 
     file = files[0]
 
-    telegram_file_id = file.get("telegram_file_id")
+    telegram_file_id = file.get(
+        "telegram_file_id"
+    )
 
     if not telegram_file_id:
         await query.message.reply_text(
@@ -249,12 +259,13 @@ async def file_button(
         )
         return
 
-    file_type = file.get("file_type")
     caption = build_caption(
         "📄",
         file.get("name"),
         file.get("description"),
     )
+
+    file_type = file.get("file_type")
 
     if file_type == "photo":
         await query.message.reply_photo(
@@ -281,7 +292,7 @@ async def file_button(
         )
 
 
-async def show_summaries_or_drawings(
+async def show_summaries(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
@@ -299,7 +310,6 @@ async def show_summaries_or_drawings(
         )
         return
 
-    content_type = parts[1]
     subject_id = parts[2]
     owner_id = parts[3]
 
@@ -310,17 +320,53 @@ async def show_summaries_or_drawings(
         )
         return
 
-    if content_type == "summaries":
-        table_name = "summaries"
-        title = "📝 الملخصات"
-        icon = "📝"
-    elif content_type == "drawings":
-        table_name = "drawings"
-        title = "🎨 الرسومات"
-        icon = "🎨"
-    else:
+    await query.answer()
+
+    await query.edit_message_text(
+        "📝 الملخصات\n\n"
+        "اختر القسم:",
+        reply_markup=summaries_section_keyboard(
+            subject_id,
+            query.from_user.id,
+        ),
+    )
+
+
+async def show_summary_section(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
         await query.answer(
-            "❌ القسم غير صالح.",
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    section_type = parts[1]
+    subject_id = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    if section_type not in (
+        "theoretical",
+        "practical",
+    ):
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
             show_alert=True,
         )
         return
@@ -329,27 +375,34 @@ async def show_summaries_or_drawings(
 
     response = (
         supabase
-        .table(table_name)
+        .table("summaries")
         .select("*")
         .eq("subject_id", subject_id)
+        .eq("section_type", section_type)
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
         .execute()
     )
 
-    items = response.data or []
+    summaries = response.data or []
 
-    if not items:
+    section_name = (
+        "📖 النظري"
+        if section_type == "theoretical"
+        else "🧪 العملي"
+    )
+
+    if not summaries:
         await query.edit_message_text(
-            f"{title}\n\n"
-            "لا توجد محتويات مضافة لهذا القسم حالياً.",
+            f"📝 الملخصات — {section_name}\n\n"
+            "لا توجد ملخصات مضافة لهذا القسم حالياً.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "⬅️ رجوع للمادة",
+                        "⬅️ رجوع للملخصات",
                         callback_data=(
-                            f"back_content:"
+                            f"content:summaries:"
                             f"{subject_id}:{owner_id}"
                         ),
                     )
@@ -360,13 +413,100 @@ async def show_summaries_or_drawings(
 
     keyboard = []
 
-    for item in items:
+    for item in summaries:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{icon} {item['name']}",
+                text=f"📝 {item['name']}",
                 callback_data=(
                     f"study_item:"
-                    f"{content_type}:"
+                    f"summaries:"
+                    f"{item['id']}:"
+                    f"{subject_id}:"
+                    f"{owner_id}"
+                ),
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "⬅️ رجوع للملخصات",
+            callback_data=(
+                f"content:summaries:"
+                f"{subject_id}:{owner_id}"
+            ),
+        )
+    ])
+
+    await query.edit_message_text(
+        f"📝 الملخصات — {section_name}\n\n"
+        "اختر الملخص:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def show_drawings(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    subject_id = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table("drawings")
+        .select("*")
+        .eq("subject_id", subject_id)
+        .eq("is_active", True)
+        .is_("deleted_at", "null")
+        .order("sort_order")
+        .execute()
+    )
+
+    drawings = response.data or []
+
+    if not drawings:
+        await query.edit_message_text(
+            "🎨 الرسومات\n\n"
+            "لا توجد رسومات مضافة حالياً.",
+            reply_markup=back_content_keyboard(
+                subject_id,
+                owner_id,
+            ),
+        )
+        return
+
+    keyboard = []
+
+    for item in drawings:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"🎨 {item['name']}",
+                callback_data=(
+                    f"study_item:"
+                    f"drawings:"
                     f"{item['id']}:"
                     f"{subject_id}:"
                     f"{owner_id}"
@@ -385,8 +525,8 @@ async def show_summaries_or_drawings(
     ])
 
     await query.edit_message_text(
-        f"{title}\n\n"
-        "اختر المحتوى:",
+        "🎨 الرسومات\n\n"
+        "اختر الرسم:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -424,9 +564,11 @@ async def study_item_button(
     if content_type == "summaries":
         table_name = "summaries"
         icon = "📝"
+
     elif content_type == "drawings":
         table_name = "drawings"
         icon = "🎨"
+
     else:
         await query.answer(
             "❌ القسم غير صالح.",
@@ -458,7 +600,9 @@ async def study_item_button(
 
     item = items[0]
 
-    telegram_file_id = item.get("telegram_file_id")
+    telegram_file_id = item.get(
+        "telegram_file_id"
+    )
 
     if not telegram_file_id:
         await query.message.reply_text(
@@ -497,6 +641,24 @@ async def study_item_button(
             document=telegram_file_id,
             caption=caption,
         )
+
+
+async def show_summaries_or_drawings(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None:
+        return
+
+    if query.data.startswith("content:summaries:"):
+        await show_summaries(update, context)
+        return
+
+    if query.data.startswith("content:drawings:"):
+        await show_drawings(update, context)
+        return
 
 
 async def back_to_content(
@@ -547,6 +709,7 @@ async def back_to_content(
         return
 
     subject = subjects[0]
+
     stage_id = subject.get("stage_id")
 
     if stage_id is None:
