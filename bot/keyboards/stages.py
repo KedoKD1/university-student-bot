@@ -23,4 +23,12 @@ def stages_keyboard(stages, user_id):
             )
         ])
 
+    # زر الرجوع للقائمة الرئيسية
+    keyboard.append([
+        InlineKeyboardButton(
+            text="🏠 القائمة الرئيسية",
+            callback_data=f"back_main:{user_id}",
+        )
+    ])
+
     return InlineKeyboardMarkup(keyboard)
