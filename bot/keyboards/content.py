@@ -67,6 +67,41 @@ def files_section_keyboard(
         ],
         [
             InlineKeyboardButton(
+                text="⬅️ رجوع للملفات",
+                callback_data=(
+                    f"back_content:"
+                    f"{subject_id}:{user_id}"
+                )
+            )
+        ],
+    ])
+
+
+def summaries_section_keyboard(
+    subject_id,
+    user_id,
+):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                text="📖 النظري",
+                callback_data=(
+                    f"summaries_section:theoretical:"
+                    f"{subject_id}:{user_id}"
+                )
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🧪 العملي",
+                callback_data=(
+                    f"summaries_section:practical:"
+                    f"{subject_id}:{user_id}"
+                )
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="⬅️ رجوع للمادة",
                 callback_data=(
                     f"back_content:"
