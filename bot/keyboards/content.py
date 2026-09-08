@@ -42,10 +42,7 @@ def content_keyboard(subject_id, user_id, stage_id):
     ])
 
 
-def files_section_keyboard(
-    subject_id,
-    user_id,
-):
+def files_section_keyboard(subject_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -67,7 +64,16 @@ def files_section_keyboard(
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ رجوع للملفات",
+                text="📚 جميع الملفات",
+                callback_data=(
+                    f"content:files:all:"
+                    f"{subject_id}:{user_id}"
+                )
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ رجوع للمادة",
                 callback_data=(
                     f"back_content:"
                     f"{subject_id}:{user_id}"
@@ -77,10 +83,7 @@ def files_section_keyboard(
     ])
 
 
-def summaries_section_keyboard(
-    subject_id,
-    user_id,
-):
+def summaries_section_keyboard(subject_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -96,6 +99,15 @@ def summaries_section_keyboard(
                 text="🧪 العملي",
                 callback_data=(
                     f"summaries_section:practical:"
+                    f"{subject_id}:{user_id}"
+                )
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📚 جميع الملخصات",
+                callback_data=(
+                    f"content:summaries:all:"
                     f"{subject_id}:{user_id}"
                 )
             )
