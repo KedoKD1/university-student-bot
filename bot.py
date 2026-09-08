@@ -108,9 +108,9 @@ from bot.handlers.admin_drawings import (
 
 
 from bot.handlers.schedules import (
-    show_schedule_stages,
-    show_schedule,
-    schedule_back_stages,
+    show_schedules,
+    student_schedule_stage,
+    locked_schedule,
 )
 
 
@@ -198,6 +198,36 @@ def main():
 
     application.add_handler(
         schedule_conversation_handler()
+    )
+
+
+    # =========================
+    # Student Schedule
+    # =========================
+
+    # مهم:
+    # لازم تكون هذه قبل main_menu_button
+    # حتى زر main:schedule يروح للجداول.
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_schedules,
+            pattern=r"^main:schedule:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            student_schedule_stage,
+            pattern=r"^student_schedule_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            locked_schedule,
+            pattern=r"^locked_schedule:",
+        )
     )
 
 
@@ -294,32 +324,6 @@ def main():
         CallbackQueryHandler(
             back_to_content,
             pattern=r"^back_content:",
-        )
-    )
-
-
-    # =========================
-    # Student Schedule
-    # =========================
-
-    application.add_handler(
-        CallbackQueryHandler(
-            show_schedule_stages,
-            pattern=r"^schedule_menu$",
-        )
-    )
-
-    application.add_handler(
-        CallbackQueryHandler(
-            show_schedule,
-            pattern=r"^schedule_stage:",
-        )
-    )
-
-    application.add_handler(
-        CallbackQueryHandler(
-            schedule_back_stages,
-            pattern=r"^schedule_back_stages:",
         )
     )
 
@@ -658,7 +662,7 @@ def main():
 
 
     # =========================
-    # Admin Schedule
+    # Admin Schedules
     # =========================
 
     application.add_handler(
