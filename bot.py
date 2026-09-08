@@ -34,6 +34,7 @@ from bot.handlers.content import (
     show_file_section,
     show_files,
     show_summaries_or_drawings,
+    show_summary_section,
     study_item_button,
 )
 
@@ -122,6 +123,19 @@ from bot.handlers.admin_schedules import (
 )
 
 
+from bot.handlers.admin_tools import (
+    admin_tools,
+    bot_status,
+    admin_roles,
+    role_manage,
+    change_role,
+    remove_role,
+    set_role,
+    bulk_conversation_handler,
+    role_conversation_handler,
+)
+
+
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
@@ -200,14 +214,18 @@ def main():
         schedule_conversation_handler()
     )
 
+    application.add_handler(
+        bulk_conversation_handler()
+    )
+
+    application.add_handler(
+        role_conversation_handler()
+    )
+
 
     # =========================
     # Student Schedule
     # =========================
-
-    # مهم:
-    # لازم تكون هذه قبل main_menu_button
-    # حتى زر main:schedule يروح للجداول.
 
     application.add_handler(
         CallbackQueryHandler(
@@ -329,15 +347,35 @@ def main():
 
 
     # =========================
-    # Student Summaries / Drawings
+    # Student Summaries
     # =========================
 
     application.add_handler(
         CallbackQueryHandler(
             show_summaries_or_drawings,
-            pattern=r"^content:(summaries|drawings):",
+            pattern=r"^content:summaries:",
         )
     )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_summary_section,
+            pattern=r"^summaries_section:",
+        )
+    )
+
+
+    # =========================
+    # Student Drawings
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_summaries_or_drawings,
+            pattern=r"^content:drawings:",
+        )
+    )
+
 
     application.add_handler(
         CallbackQueryHandler(
@@ -688,6 +726,60 @@ def main():
 
 
     # =========================
+    # Admin Tools
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_tools,
+            pattern=r"^admin_tools$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            bot_status,
+            pattern=r"^bot_status$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_roles,
+            pattern=r"^admin_roles$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            role_manage,
+            pattern=r"^role_manage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            change_role,
+            pattern=r"^change_role:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            remove_role,
+            pattern=r"^remove_role:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            set_role,
+            pattern=r"^set_role:",
+        )
+    )
+
+
+    # =========================
     # Admin Navigation
     # =========================
 
@@ -705,6 +797,7 @@ def main():
                 r"^admin_"
                 r"(?!subjects$|back$|files$|"
                 r"summaries$|drawings$|schedules$|"
+                r"tools$|roles$|"
                 r"stage_subjects:|"
                 r"file_|"
                 r"summary_|"
