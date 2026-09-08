@@ -6,11 +6,13 @@ from telegram.ext import (
 
 from bot.database.client import supabase
 
+
 from bot.handlers.main_menu import (
     show_main_menu,
     main_menu_button,
     back_main,
 )
+
 
 from bot.handlers.stages import (
     locked_stage_button,
@@ -18,11 +20,13 @@ from bot.handlers.stages import (
     stage_button,
 )
 
+
 from bot.handlers.subjects import (
     back_to_stages,
     back_to_subjects,
     subject_button,
 )
+
 
 from bot.handlers.content import (
     back_to_content,
@@ -33,11 +37,13 @@ from bot.handlers.content import (
     study_item_button,
 )
 
+
 from bot.handlers.admin import (
     admin_back,
     admin_button,
     admin_command,
 )
+
 
 from bot.handlers.admin_subjects import (
     admin_subjects,
@@ -48,6 +54,7 @@ from bot.handlers.admin_subjects import (
     manage_subject,
     subject_conversation_handler,
 )
+
 
 from bot.handlers.admin_files import (
     admin_files,
@@ -65,6 +72,7 @@ from bot.handlers.admin_files import (
     file_conversation_handler,
 )
 
+
 from bot.handlers.admin_summaries import (
     admin_summaries,
     admin_summary_stage,
@@ -81,11 +89,30 @@ from bot.handlers.admin_summaries import (
     summary_conversation_handler,
 )
 
+
+from bot.handlers.admin_drawings import (
+    admin_drawings,
+    admin_drawing_stage,
+    admin_drawing_subject,
+    admin_drawing_subjects,
+    admin_drawing_sections,
+    admin_drawing_section,
+    admin_drawing_list,
+    manage_drawing,
+    disable_drawing,
+    enable_drawing,
+    delete_drawing,
+    confirm_delete_drawing,
+    drawing_conversation_handler,
+)
+
+
 from bot.handlers.schedules import (
     show_schedule_stages,
     show_schedule,
     schedule_back_stages,
 )
+
 
 from bot.handlers.admin_schedules import (
     admin_schedules,
@@ -93,6 +120,7 @@ from bot.handlers.admin_schedules import (
     delete_schedule,
     schedule_conversation_handler,
 )
+
 
 from bot.utils.config import (
     BOT_TOKEN,
@@ -128,6 +156,7 @@ def main():
         .build()
     )
 
+
     # =========================
     # Commands
     # =========================
@@ -146,6 +175,7 @@ def main():
         )
     )
 
+
     # =========================
     # Admin Conversations
     # =========================
@@ -163,8 +193,13 @@ def main():
     )
 
     application.add_handler(
+        drawing_conversation_handler()
+    )
+
+    application.add_handler(
         schedule_conversation_handler()
     )
+
 
     # =========================
     # Main Menu
@@ -184,6 +219,7 @@ def main():
         )
     )
 
+
     # =========================
     # Stages
     # =========================
@@ -201,6 +237,7 @@ def main():
             pattern=r"^locked:",
         )
     )
+
 
     # =========================
     # Subjects
@@ -226,6 +263,7 @@ def main():
             pattern=r"^back_stages:",
         )
     )
+
 
     # =========================
     # Student Files
@@ -259,6 +297,7 @@ def main():
         )
     )
 
+
     # =========================
     # Student Schedule
     # =========================
@@ -284,23 +323,25 @@ def main():
         )
     )
 
+
     # =========================
     # Student Summaries / Drawings
     # =========================
 
     application.add_handler(
-    CallbackQueryHandler(
-        show_summaries_or_drawings,
-        pattern=r"^content:(summaries|drawings):",
+        CallbackQueryHandler(
+            show_summaries_or_drawings,
+            pattern=r"^content:(summaries|drawings):",
+        )
     )
-)
 
-application.add_handler(
-    CallbackQueryHandler(
-        study_item_button,
-        pattern=r"^study_item:",
+    application.add_handler(
+        CallbackQueryHandler(
+            study_item_button,
+            pattern=r"^study_item:",
+        )
     )
-)
+
 
     # =========================
     # Admin Subjects
@@ -347,6 +388,7 @@ application.add_handler(
             pattern=r"^enable_subject:",
         )
     )
+
 
     # =========================
     # Admin Files
@@ -436,6 +478,7 @@ application.add_handler(
         )
     )
 
+
     # =========================
     # Admin Summaries
     # =========================
@@ -524,6 +567,96 @@ application.add_handler(
         )
     )
 
+
+    # =========================
+    # Admin Drawings
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawings,
+            pattern=r"^admin_drawings$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_stage,
+            pattern=r"^admin_drawing_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_subject,
+            pattern=r"^admin_drawing_subject:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_subjects,
+            pattern=r"^admin_drawing_subjects:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_sections,
+            pattern=r"^admin_drawing_sections:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_section,
+            pattern=r"^admin_drawing_section:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawing_list,
+            pattern=r"^admin_drawing_list:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_drawing,
+            pattern=r"^manage_drawing:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            disable_drawing,
+            pattern=r"^disable_drawing:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_drawing,
+            pattern=r"^enable_drawing:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_drawing,
+            pattern=r"^delete_drawing:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            confirm_delete_drawing,
+            pattern=r"^confirm_delete_drawing:",
+        )
+    )
+
+
     # =========================
     # Admin Schedule
     # =========================
@@ -549,6 +682,7 @@ application.add_handler(
         )
     )
 
+
     # =========================
     # Admin Navigation
     # =========================
@@ -566,13 +700,15 @@ application.add_handler(
             pattern=(
                 r"^admin_"
                 r"(?!subjects$|back$|files$|"
-                r"summaries$|schedules$|"
+                r"summaries$|drawings$|schedules$|"
                 r"stage_subjects:|"
                 r"file_|"
-                r"summary_)"
+                r"summary_|"
+                r"drawing_)"
             ),
         )
     )
+
 
     # =========================
     # Start
