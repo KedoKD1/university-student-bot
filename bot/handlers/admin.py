@@ -1,18 +1,20 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 
 
-# =========================
-# Admin Check
-# =========================
-
 async def is_admin(user_id: int) -> bool:
     response = (
         supabase
         .table("admins")
-        .select("id, telegram_id, role, is_active")
+        .select(
+            "id, telegram_id, role, is_active"
+        )
         .eq("telegram_id", user_id)
         .eq("is_active", True)
         .limit(1)
@@ -21,10 +23,6 @@ async def is_admin(user_id: int) -> bool:
 
     return bool(response.data)
 
-
-# =========================
-# Admin Keyboard
-# =========================
 
 def admin_keyboard():
     return InlineKeyboardMarkup([
@@ -60,6 +58,12 @@ def admin_keyboard():
         ],
         [
             InlineKeyboardButton(
+                "🧰 أدوات الإدارة",
+                callback_data="admin_tools"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "📢 الإعلانات",
                 callback_data="admin_announcements"
             )
@@ -72,10 +76,6 @@ def admin_keyboard():
         ],
     ])
 
-
-# =========================
-# Admin Command
-# =========================
 
 async def admin_command(
     update: Update,
@@ -99,10 +99,6 @@ async def admin_command(
         reply_markup=admin_keyboard()
     )
 
-
-# =========================
-# Back To Admin
-# =========================
 
 async def admin_back(
     update: Update,
@@ -129,10 +125,6 @@ async def admin_back(
         reply_markup=admin_keyboard()
     )
 
-
-# =========================
-# Delete Subject
-# =========================
 
 async def delete_subject(
     update: Update,
@@ -215,10 +207,6 @@ async def delete_subject(
     )
 
 
-# =========================
-# Confirm Delete Subject
-# =========================
-
 async def confirm_delete_subject(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -275,13 +263,11 @@ async def confirm_delete_subject(
     )
 
     try:
-        # حذف الملفات المرتبطة بالمادة أولاً
         supabase.table("files").delete().eq(
             "subject_id",
             subject_id,
         ).execute()
 
-        # حذف المادة
         supabase.table("subjects").delete().eq(
             "id",
             subject_id,
@@ -308,7 +294,8 @@ async def confirm_delete_subject(
                 InlineKeyboardButton(
                     "⬅️ العودة إلى المواد",
                     callback_data=(
-                        f"admin_stage_subjects:{stage_id}"
+                        f"admin_stage_subjects:"
+                        f"{stage_id}"
                     ),
                 )
             ],
@@ -321,10 +308,6 @@ async def confirm_delete_subject(
         ])
     )
 
-
-# =========================
-# Admin Button
-# =========================
 
 async def admin_button(
     update: Update,
@@ -344,18 +327,18 @@ async def admin_button(
         )
         return
 
-    # =========================
-    # Delete Subject
-    # =========================
-
-    if query.data.startswith("admin_delete_subject:"):
+    if query.data.startswith(
+        "admin_delete_subject:"
+    ):
         await delete_subject(
             update,
             context,
         )
         return
 
-    if query.data.startswith("admin_confirm_delete_subject:"):
+    if query.data.startswith(
+        "admin_confirm_delete_subject:"
+    ):
         await confirm_delete_subject(
             update,
             context,
@@ -364,29 +347,7 @@ async def admin_button(
 
     await query.answer()
 
-    # =========================
-    # Admin Sections
-    # =========================
-
-    if query.data == "admin_files":
-        await query.edit_message_text(
-            "📄 إدارة الملفات\n\n"
-            "هذا القسم قيد الإنشاء."
-        )
-
-    elif query.data == "admin_summaries":
-        await query.edit_message_text(
-            "📝 إدارة الملخصات\n\n"
-            "هذا القسم قيد الإنشاء."
-        )
-
-    elif query.data == "admin_drawings":
-        await query.edit_message_text(
-            "🎨 إدارة الرسومات\n\n"
-            "هذا القسم قيد الإنشاء."
-        )
-
-    elif query.data == "admin_announcements":
+    if query.data == "admin_announcements":
         await query.edit_message_text(
             "📢 الإعلانات\n\n"
             "هذا القسم قيد الإنشاء."
