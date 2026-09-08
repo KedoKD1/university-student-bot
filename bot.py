@@ -1,8 +1,12 @@
+from telegram import Update
+
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    TypeHandler,
 )
+
 
 from bot.database.client import supabase
 
@@ -36,8 +40,10 @@ from bot.handlers.content import (
     show_summaries_or_drawings,
     show_summary_section,
     show_all_summaries,
+    show_all_drawings,
     study_item_button,
 )
+
 
 from bot.handlers.admin import (
     admin_back,
@@ -131,8 +137,21 @@ from bot.handlers.admin_tools import (
     change_role,
     remove_role,
     set_role,
-    bulk_conversation_handler,
     role_conversation_handler,
+)
+
+
+from bot.handlers.bundle_descriptions import (
+    bundle_descriptions,
+    choose_description_type,
+    choose_description_stage,
+    choose_description_subject,
+    bundle_description_conversation_handler,
+)
+
+
+from bot.handlers.user_tracking import (
+    track_user,
 )
 
 
@@ -168,6 +187,19 @@ def main():
         .builder()
         .token(BOT_TOKEN)
         .build()
+    )
+
+
+    # =========================
+    # Telegram User Tracking
+    # =========================
+
+    application.add_handler(
+        TypeHandler(
+            Update,
+            track_user,
+        ),
+        group=-1,
     )
 
 
@@ -215,7 +247,7 @@ def main():
     )
 
     application.add_handler(
-        bulk_conversation_handler()
+        bundle_description_conversation_handler()
     )
 
     application.add_handler(
@@ -378,11 +410,17 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            show_all_drawings,
+            pattern=r"^content:drawings:all:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             show_summaries_or_drawings,
             pattern=r"^content:drawings:",
         )
     )
-
 
     application.add_handler(
         CallbackQueryHandler(
@@ -782,6 +820,39 @@ def main():
         CallbackQueryHandler(
             set_role,
             pattern=r"^set_role:",
+        )
+    )
+
+
+    # =========================
+    # Bundle Descriptions
+    # =========================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            bundle_descriptions,
+            pattern=r"^bundle_descriptions$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            choose_description_type,
+            pattern=r"^bundle_desc_type:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            choose_description_stage,
+            pattern=r"^bundle_desc_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            choose_description_subject,
+            pattern=r"^bundle_desc_subject:",
         )
     )
 
