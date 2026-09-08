@@ -144,15 +144,6 @@ def section_keyboard(stage_id, subject_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="📖 النظري",
-                callback_data=(
-                    f"admin_drawing_section:"
-                    f"theoretical:{subject_id}:{stage_id}"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text="🧪 العملي",
                 callback_data=(
                     f"admin_drawing_section:"
