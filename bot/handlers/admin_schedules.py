@@ -19,56 +19,6 @@ from bot.handlers.admin import is_admin
 ADD_SCHEDULE_IMAGE = 1
 
 
-def stages_keyboard():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "📚 المرحلة 1",
-                callback_data="admin_schedule_stage:1",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📚 المرحلة 2",
-                callback_data="admin_schedule_stage:2",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📚 المرحلة 3",
-                callback_data="admin_schedule_stage:3",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📚 المرحلة 4",
-                callback_data="admin_schedule_stage:4",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "⬅️ لوحة الإدارة",
-                callback_data="admin_back",
-            )
-        ],
-    ])
-
-
-async def get_stage_by_number(stage_number):
-    response = (
-        supabase
-        .table("stages")
-        .select("id, stage_number, is_active")
-        .eq("stage_number", stage_number)
-        .limit(1)
-        .execute()
-    )
-
-    data = response.data or []
-
-    return data[0] if data else None
-
-
 async def admin_schedules(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -107,7 +57,8 @@ async def admin_schedules(
                     f"المرحلة {stage['stage_number']}"
                 ),
                 callback_data=(
-                    f"admin_schedule_stage:{stage['id']}"
+                    f"admin_schedule_stage:"
+                    f"{stage['id']}"
                 ),
             )
         ])
@@ -202,7 +153,8 @@ async def admin_schedule_stage(
             InlineKeyboardButton(
                 "🗑️ حذف الجدول",
                 callback_data=(
-                    f"delete_schedule:{schedules[0]['id']}"
+                    f"delete_schedule:"
+                    f"{schedules[0]['id']}"
                 ),
             )
         ])
@@ -297,6 +249,20 @@ async def receive_schedule_image(
     telegram_file_id = photo.file_id
 
     try:
+        stage_response = (
+            supabase
+            .table("stages")
+            .select("id")
+            .eq("id", stage_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not stage_response.data:
+            raise ValueError(
+                "Stage does not exist."
+            )
+
         existing = (
             supabase
             .table("schedules")
@@ -308,25 +274,47 @@ async def receive_schedule_image(
 
         existing_rows = existing.data or []
 
-        if existing_rows:
-            supabase.table("schedules").update({
-                "telegram_file_id": telegram_file_id,
-                "is_active": True,
-            }).eq(
-                "id",
-                existing_rows[0]["id"],
-            ).execute()
-        else:
-            supabase.table("schedules").insert({
-                "stage_id": stage_id,
-                "telegram_file_id": telegram_file_id,
-                "is_active": True,
-            }).execute()
+        schedule_data = {
+            "stage_id": stage_id,
+            "telegram_file_id": telegram_file_id,
+            "is_active": True,
+        }
 
-    except Exception:
-        await update.message.reply_text(
-            "❌ تعذر حفظ صورة الجدول."
+        if existing_rows:
+            response = (
+                supabase
+                .table("schedules")
+                .update(schedule_data)
+                .eq(
+                    "id",
+                    existing_rows[0]["id"],
+                )
+                .execute()
+            )
+        else:
+            response = (
+                supabase
+                .table("schedules")
+                .insert(schedule_data)
+                .execute()
+            )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no saved schedule."
+            )
+
+    except Exception as exc:
+        print(
+            "SCHEDULE SAVE ERROR:"
+            f" {type(exc).__name__}: {exc}"
         )
+
+        await update.message.reply_text(
+            "❌ تعذر حفظ صورة الجدول.\n\n"
+            "تم تسجيل الخطأ في Railway Logs."
+        )
+
         return ConversationHandler.END
 
     await update.message.reply_text(
@@ -390,13 +378,25 @@ async def delete_schedule(
 
     await query.answer()
 
-    supabase.table("schedules").update({
-        "is_active": False,
-        "telegram_file_id": None,
-    }).eq(
-        "id",
-        schedule_id,
-    ).execute()
+    try:
+        supabase.table("schedules").update({
+            "is_active": False,
+            "telegram_file_id": None,
+        }).eq(
+            "id",
+            schedule_id,
+        ).execute()
+
+    except Exception as exc:
+        print(
+            "SCHEDULE DELETE ERROR:"
+            f" {type(exc).__name__}: {exc}"
+        )
+
+        await query.edit_message_text(
+            "❌ تعذر حذف الجدول."
+        )
+        return
 
     await query.edit_message_text(
         "✅ تم حذف صورة الجدول.",
@@ -405,7 +405,8 @@ async def delete_schedule(
                 InlineKeyboardButton(
                     "⬅️ إدارة المرحلة",
                     callback_data=(
-                        f"admin_schedule_stage:{stage_id}"
+                        f"admin_schedule_stage:"
+                        f"{stage_id}"
                     ),
                 )
             ],
@@ -417,6 +418,23 @@ async def delete_schedule(
             ],
         ]),
     )
+
+
+async def cancel_schedule(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    context.user_data.pop(
+        "schedule_stage_id",
+        None,
+    )
+
+    if update.message:
+        await update.message.reply_text(
+            "❌ تم إلغاء العملية."
+        )
+
+    return ConversationHandler.END
 
 
 def schedule_conversation_handler():
@@ -443,20 +461,3 @@ def schedule_conversation_handler():
         ],
         allow_reentry=True,
     )
-
-
-async def cancel_schedule(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    context.user_data.pop(
-        "schedule_stage_id",
-        None,
-    )
-
-    if update.message:
-        await update.message.reply_text(
-            "❌ تم إلغاء العملية."
-        )
-
-    return ConversationHandler.END
