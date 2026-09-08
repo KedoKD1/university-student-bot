@@ -1,8 +1,4 @@
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
@@ -10,6 +6,7 @@ from bot.keyboards.content import (
     content_keyboard,
     files_section_keyboard,
     summaries_section_keyboard,
+    drawings_section_keyboard,
 )
 
 
@@ -48,25 +45,44 @@ def back_content_keyboard(subject_id, owner_id):
         [
             InlineKeyboardButton(
                 "⬅️ رجوع للمادة",
-                callback_data=(
-                    f"back_content:"
-                    f"{subject_id}:{owner_id}"
-                ),
+                callback_data=f"back_content:{subject_id}:{owner_id}",
             )
         ]
     ])
 
 
-async def send_content_item(message, item, icon):
+def back_section_keyboard(callback_data, text):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                text,
+                callback_data=callback_data,
+            )
+        ]
+    ])
+
+
+async def send_content_item(
+    message,
+    item,
+    icon,
+    include_description=True,
+):
     telegram_file_id = item.get("telegram_file_id")
 
     if not telegram_file_id:
         return False
 
+    description = (
+        item.get("description")
+        if include_description
+        else None
+    )
+
     caption = build_caption(
         icon,
         item.get("name"),
-        item.get("description"),
+        description,
     )
 
     file_type = item.get("file_type")
@@ -98,6 +114,39 @@ async def send_content_item(message, item, icon):
     return True
 
 
+async def get_collection_description(
+    subject_id,
+    content_type,
+):
+    try:
+        response = (
+            supabase
+            .table("content_bundle_descriptions")
+            .select("description")
+            .eq("subject_id", subject_id)
+            .eq("content_type", content_type)
+            .limit(1)
+            .execute()
+        )
+
+        rows = response.data or []
+
+        if rows:
+            return (
+                rows[0].get("description")
+                or ""
+            ).strip()
+
+    except Exception as exc:
+        print(
+            "COLLECTION DESCRIPTION READ ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+    return ""
+
+
 async def show_files(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -108,9 +157,6 @@ async def show_files(
         return
 
     parts = query.data.split(":")
-
-    # content:files:subject_id:user_id
-    # content:files:all:subject_id:user_id
 
     if len(parts) == 4:
         subject_id = parts[2]
@@ -138,10 +184,6 @@ async def show_files(
 
     await query.answer()
 
-    # =========================
-    # جميع الملفات
-    # =========================
-
     if show_all:
         response = (
             supabase
@@ -167,20 +209,38 @@ async def show_files(
             )
             return
 
+        description = await get_collection_description(
+            subject_id,
+            "files",
+        )
+
         await query.edit_message_text(
             "📚 جميع الملفات\n\n"
             "⏳ جاري إرسال الملفات النظرية والعملية..."
         )
 
+        if description:
+            try:
+                await query.message.reply_text(
+                    description
+                )
+            except Exception as exc:
+                print(
+                    "ALL FILES DESCRIPTION SEND ERROR:",
+                    type(exc).__name__,
+                    exc,
+                )
+
         sent_count = 0
         failed_count = 0
 
-        for file in files:
+        for item in files:
             try:
                 sent = await send_content_item(
                     query.message,
-                    file,
+                    item,
                     "📄",
+                    include_description=False,
                 )
 
                 if sent:
@@ -190,7 +250,9 @@ async def show_files(
 
             except Exception as exc:
                 print(
-                    f"ALL FILES SEND ERROR: {exc}"
+                    "ALL FILES SEND ERROR:",
+                    type(exc).__name__,
+                    exc,
                 )
                 failed_count += 1
 
@@ -213,10 +275,6 @@ async def show_files(
         )
 
         return
-
-    # =========================
-    # قائمة الملفات
-    # =========================
 
     await query.edit_message_text(
         "📄 الملفات\n\n"
@@ -293,29 +351,22 @@ async def show_file_section(
         await query.edit_message_text(
             f"📄 الملفات — {section_name}\n\n"
             "لا توجد ملفات مضافة لهذا القسم حاليًا.",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "⬅️ رجوع للملفات",
-                        callback_data=(
-                            f"content:files:"
-                            f"{subject_id}:{owner_id}"
-                        ),
-                    )
-                ]
-            ]),
+            reply_markup=back_section_keyboard(
+                f"content:files:{subject_id}:{owner_id}",
+                "⬅️ رجوع للملفات",
+            ),
         )
         return
 
     keyboard = []
 
-    for file in files:
+    for item in files:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📄 {file['name']}",
+                f"📄 {item['name']}",
                 callback_data=(
                     f"file:"
-                    f"{file['id']}:"
+                    f"{item['id']}:"
                     f"{owner_id}"
                 ),
             )
@@ -334,7 +385,9 @@ async def show_file_section(
     await query.edit_message_text(
         f"📄 الملفات — {section_name}\n\n"
         "اختر الملف:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -387,13 +440,12 @@ async def file_button(
         )
         return
 
-    file = files[0]
-
     try:
         sent = await send_content_item(
             query.message,
-            file,
+            files[0],
             "📄",
+            include_description=True,
         )
 
         if not sent:
@@ -403,7 +455,9 @@ async def file_button(
 
     except Exception as exc:
         print(
-            f"FILE SEND ERROR: {exc}"
+            "FILE SEND ERROR:",
+            type(exc).__name__,
+            exc,
         )
 
         await query.message.reply_text(
@@ -440,10 +494,6 @@ async def show_summaries_or_drawings(
         )
         return
 
-    # =========================
-    # الملخصات
-    # =========================
-
     if content_type == "summaries":
         await query.answer()
 
@@ -458,15 +508,18 @@ async def show_summaries_or_drawings(
 
         return
 
-    # =========================
-    # الرسومات
-    # =========================
-
     if content_type == "drawings":
-        await show_drawings(
-            update,
-            context,
+        await query.answer()
+
+        await query.edit_message_text(
+            "🎨 الرسومات\n\n"
+            "اختر العملية:",
+            reply_markup=drawings_section_keyboard(
+                subject_id,
+                query.from_user.id,
+            ),
         )
+
         return
 
     await query.answer(
@@ -540,17 +593,10 @@ async def show_summary_section(
         await query.edit_message_text(
             f"📝 الملخصات — {section_name}\n\n"
             "لا توجد ملخصات مضافة لهذا القسم حاليًا.",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "⬅️ رجوع للملخصات",
-                        callback_data=(
-                            f"content:summaries:"
-                            f"{subject_id}:{owner_id}"
-                        ),
-                    )
-                ]
-            ]),
+            reply_markup=back_section_keyboard(
+                f"content:summaries:{subject_id}:{owner_id}",
+                "⬅️ رجوع للملخصات",
+            ),
         )
         return
 
@@ -559,7 +605,7 @@ async def show_summary_section(
     for item in summaries:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"📝 {item['name']}",
+                f"📝 {item['name']}",
                 callback_data=(
                     f"study_item:"
                     f"summaries:"
@@ -583,7 +629,9 @@ async def show_summary_section(
     await query.edit_message_text(
         f"📝 الملخصات — {section_name}\n\n"
         "اختر الملخص:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -597,8 +645,6 @@ async def show_all_summaries(
         return
 
     parts = query.data.split(":")
-
-    # content:summaries:all:subject_id:user_id
 
     if (
         len(parts) != 5
@@ -648,10 +694,27 @@ async def show_all_summaries(
         )
         return
 
+    description = await get_collection_description(
+        subject_id,
+        "summaries",
+    )
+
     await query.edit_message_text(
         "📚 جميع الملخصات\n\n"
         "⏳ جاري إرسال الملخصات النظرية والعملية..."
     )
+
+    if description:
+        try:
+            await query.message.reply_text(
+                description
+            )
+        except Exception as exc:
+            print(
+                "ALL SUMMARIES DESCRIPTION SEND ERROR:",
+                type(exc).__name__,
+                exc,
+            )
 
     sent_count = 0
     failed_count = 0
@@ -662,6 +725,7 @@ async def show_all_summaries(
                 query.message,
                 item,
                 "📝",
+                include_description=False,
             )
 
             if sent:
@@ -671,12 +735,122 @@ async def show_all_summaries(
 
         except Exception as exc:
             print(
-                f"ALL SUMMARIES SEND ERROR: {exc}"
+                "ALL SUMMARIES SEND ERROR:",
+                type(exc).__name__,
+                exc,
             )
             failed_count += 1
 
     result_text = (
         "📚 تم إرسال جميع الملخصات.\n\n"
+        f"✅ تم إرسال: {sent_count}"
+    )
+
+    if failed_count:
+        result_text += (
+            f"\n⚠️ تعذر إرسال: {failed_count}"
+        )
+
+    await query.message.reply_text(
+        result_text,
+        reply_markup=back_content_keyboard(
+            subject_id,
+            owner_id,
+        ),
+    )
+
+
+async def show_all_drawings(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if (
+        len(parts) != 5
+        or parts[0] != "content"
+        or parts[1] != "drawings"
+        or parts[2] != "all"
+    ):
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    subject_id = parts[3]
+    owner_id = parts[4]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table("drawings")
+        .select("*")
+        .eq("subject_id", subject_id)
+        .eq("is_active", True)
+        .is_("deleted_at", "null")
+        .order("sort_order")
+        .execute()
+    )
+
+    drawings = response.data or []
+
+    if not drawings:
+        await query.edit_message_text(
+            "🎨 جميع الرسومات\n\n"
+            "⚠️ لا توجد رسومات مضافة لهذه المادة حاليًا.",
+            reply_markup=back_content_keyboard(
+                subject_id,
+                owner_id,
+            ),
+        )
+        return
+
+    await query.edit_message_text(
+        "🎨 جميع الرسومات\n\n"
+        "⏳ جاري إرسال جميع الرسومات..."
+    )
+
+    sent_count = 0
+    failed_count = 0
+
+    for item in drawings:
+        try:
+            sent = await send_content_item(
+                query.message,
+                item,
+                "🎨",
+                include_description=False,
+            )
+
+            if sent:
+                sent_count += 1
+            else:
+                failed_count += 1
+
+        except Exception as exc:
+            print(
+                "ALL DRAWINGS SEND ERROR:",
+                type(exc).__name__,
+                exc,
+            )
+            failed_count += 1
+
+    result_text = (
+        "🎨 تم إرسال جميع الرسومات.\n\n"
         f"✅ تم إرسال: {sent_count}"
     )
 
@@ -753,7 +927,7 @@ async def show_drawings(
     for item in drawings:
         keyboard.append([
             InlineKeyboardButton(
-                text=f"🎨 {item['name']}",
+                f"🎨 {item['name']}",
                 callback_data=(
                     f"study_item:"
                     f"drawings:"
@@ -763,6 +937,16 @@ async def show_drawings(
                 ),
             )
         ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "📚 إرسال جميع الرسومات",
+            callback_data=(
+                f"content:drawings:all:"
+                f"{subject_id}:{owner_id}"
+            ),
+        )
+    ])
 
     keyboard.append([
         InlineKeyboardButton(
@@ -776,8 +960,10 @@ async def show_drawings(
 
     await query.edit_message_text(
         "🎨 الرسومات\n\n"
-        "اختر الرسم:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "اختر الرسم أو إرسالها كلها:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
     )
 
 
@@ -848,13 +1034,12 @@ async def study_item_button(
         )
         return
 
-    item = items[0]
-
     try:
         sent = await send_content_item(
             query.message,
-            item,
+            items[0],
             icon,
+            include_description=True,
         )
 
         if not sent:
@@ -864,7 +1049,9 @@ async def study_item_button(
 
     except Exception as exc:
         print(
-            f"STUDY ITEM SEND ERROR: {exc}"
+            "STUDY ITEM SEND ERROR:",
+            type(exc).__name__,
+            exc,
         )
 
         await query.message.reply_text(
