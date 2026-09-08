@@ -1,9 +1,24 @@
-from telegram import Update
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 from bot.keyboards.stages import stages_keyboard
 from bot.handlers.subjects import show_subjects
+
+
+def stages_back_keyboard(user_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "⬅️ رجوع",
+                callback_data=f"back_main:{user_id}",
+            )
+        ]
+    ])
 
 
 async def show_stages(
@@ -33,23 +48,22 @@ async def show_stages(
         "اختر المرحلة الدراسية:"
     )
 
+    keyboard = stages_keyboard(
+        stages,
+        user_id,
+    )
+
     if edit_message and update.callback_query:
         await update.callback_query.edit_message_text(
             text,
-            reply_markup=stages_keyboard(
-                stages,
-                user_id,
-            ),
+            reply_markup=keyboard,
         )
         return
 
     if update.message:
         await update.message.reply_text(
             text,
-            reply_markup=stages_keyboard(
-                stages,
-                user_id,
-            ),
+            reply_markup=keyboard,
         )
 
 
@@ -97,7 +111,10 @@ async def stage_button(
 
     if not stages:
         await query.edit_message_text(
-            "❌ تعذر العثور على هذه المرحلة."
+            "❌ تعذر العثور على هذه المرحلة.",
+            reply_markup=stages_back_keyboard(
+                query.from_user.id
+            ),
         )
         return
 
