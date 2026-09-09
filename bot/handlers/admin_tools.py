@@ -151,7 +151,7 @@ async def bot_status(
         except Exception:
             return 0
 
-    users = count_rows("users")
+    users = count_rows("telegram_users")
 
     admins = count_rows(
         "admins",
