@@ -199,9 +199,6 @@ def main():
     # Permission Guard
     # ========================================================
 
-    # This handler runs before normal callback handlers.
-    # It checks whether the user has permission to execute
-    # an administrative callback.
     application.add_handler(
         CallbackQueryHandler(
             permission_guard,
@@ -858,55 +855,46 @@ def main():
     application.add_handler(
         CallbackQueryHandler(
             choose_description_type,
-            pattern=r"^bundle_desc_type:",
+            pattern=r"^choose_description_type:",
         )
     )
 
     application.add_handler(
         CallbackQueryHandler(
             choose_description_stage,
-            pattern=r"^bundle_desc_stage:",
+            pattern=r"^choose_description_stage:",
         )
     )
 
     application.add_handler(
         CallbackQueryHandler(
             choose_description_subject,
-            pattern=r"^bundle_desc_subject:",
+            pattern=r"^choose_description_subject:",
         )
     )
 
 
     # ========================================================
-    # Admin Navigation
+    # Admin Main Menu
     # ========================================================
-
-    application.add_handler(
-        CallbackQueryHandler(
-            admin_back,
-            pattern=r"^admin_back$",
-        )
-    )
 
     application.add_handler(
         CallbackQueryHandler(
             admin_button,
-            pattern=(
-                r"^admin_"
-                r"(?!subjects$|back$|files$|"
-                r"summaries$|drawings$|schedules$|"
-                r"tools$|roles$|"
-                r"stage_subjects:|"
-                r"file_|"
-                r"summary_|"
-                r"drawing_)"
-            ),
+            pattern=r"^admin:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_back,
+            pattern=r"^admin_back:",
         )
     )
 
 
     # ========================================================
-    # Start Bot
+    # Run Bot
     # ========================================================
 
     print(
@@ -914,7 +902,7 @@ def main():
     )
 
     application.run_polling(
-        drop_pending_updates=True
+        allowed_updates=Update.ALL_TYPES
     )
 
 
