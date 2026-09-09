@@ -216,7 +216,7 @@ async def bot_status(
         "🟢 الحالة: يعمل\n\n"
         "👥 الإحصائيات\n"
         f"• المستخدمون: {users}\n"
-        f"• الكروبات/المحادثات المسجلة: {chats}\n\n"
+        f"• الكروبات/القنوات المسجلة: {chats}\n\n"
         "🛡️ الإدارة\n"
         f"• 👑 Owners: {owner_count}\n"
         f"• 🛡️ Admins: {admin_count}\n"
