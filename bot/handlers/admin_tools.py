@@ -126,30 +126,35 @@ async def bot_status(
 
     await query.answer()
 
-    def count_rows(
-        table,
-        active_only=False,
-    ):
-        builder = (
-            supabase
-            .table(table)
-            .select(
-                "id",
-                count="exact",
-            )
+def count_rows(
+    table,
+    active_only=False,
+):
+    builder = (
+        supabase
+        .table(table)
+        .select(
+            "*",
+            count="exact",
+        )
+    )
+
+    if active_only:
+        builder = builder.eq(
+            "is_active",
+            True,
         )
 
-        if active_only:
-            builder = builder.eq(
-                "is_active",
-                True,
-            )
-
-        try:
-            result = builder.execute()
-            return result.count or 0
-        except Exception:
-            return 0
+    try:
+        result = builder.execute()
+        return result.count or 0
+    except Exception as exc:
+        print(
+            f"COUNT ERROR [{table}]:",
+            type(exc).__name__,
+            exc,
+        )
+        return 0
 
     users = count_rows("telegram_users")
 
