@@ -1,18 +1,14 @@
 from telegram import Update
 from telegram.ext import ContextTypes
+
 from bot.database.client import supabase
+
 from bot.keyboards.subjects import subjects_keyboard
 from bot.keyboards.stages import stages_keyboard
 from bot.keyboards.content import content_keyboard
-async def show_subjects(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    stage_id: str,
-):
-    query = update.callback_query
-    if query is None or query.from_user is None:
-        return
-    user_id = query.from_user.id
+
+
+async def _get_active_subjects(stage_id):
     response = (
         supabase
         .table("subjects")
@@ -22,46 +18,129 @@ async def show_subjects(
         .order("sort_order")
         .execute()
     )
-    subjects = response.data
+
+    return response.data or []
+
+
+async def show_subjects(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    stage_id: str,
+    page: int = 0,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    user_id = query.from_user.id
+
+    subjects = await _get_active_subjects(
+        stage_id
+    )
+
     await query.answer()
+
     if not subjects:
         await query.edit_message_text(
             "📚 مواد المرحلة\n\n"
             "لا توجد مواد مضافة لهذه المرحلة حالياً."
         )
         return
+
     await query.edit_message_text(
         "📚 مواد المرحلة\n\n"
         "اختر المادة:",
         reply_markup=subjects_keyboard(
             subjects,
-            user_id
-        )
+            user_id,
+            stage_id,
+            page,
+        ),
     )
+
+
+async def subjects_page_button(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 4:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    stage_id = parts[1]
+    page_text = parts[2]
+    owner_id = parts[3]
+
+    if str(query.from_user.id) != owner_id:
+        await query.answer(
+            "⛔ هذا الاختيار مو إلك.\n"
+            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        page = int(page_text)
+    except ValueError:
+        await query.answer(
+            "❌ صفحة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if page < 0:
+        page = 0
+
+    await show_subjects(
+        update,
+        context,
+        stage_id,
+        page,
+    )
+
+
 async def subject_button(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
     subject_id = parts[1]
     owner_id = parts[2]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.\n"
             "استخدم /start حتى تحصل على قائمتك الخاصة.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
     await query.answer()
+
     response = (
         supabase
         .table("subjects")
@@ -71,22 +150,28 @@ async def subject_button(
         .single()
         .execute()
     )
+
     subject = response.data
+
     if not subject:
         await query.edit_message_text(
             "❌ تعذر العثور على هذه المادة."
         )
         return
+
     description = (
         subject.get("description")
         or "لا يوجد وصف للمادة حالياً."
     )
+
     stage_id = subject.get("stage_id")
+
     if stage_id is None:
         await query.edit_message_text(
             "❌ تعذر تحديد المرحلة الخاصة بهذه المادة."
         )
         return
+
     await query.edit_message_text(
         f"📘 {subject['name']}\n\n"
         f"{description}\n\n"
@@ -94,77 +179,74 @@ async def subject_button(
         reply_markup=content_keyboard(
             subject_id,
             query.from_user.id,
-            stage_id
-        )
+            stage_id,
+        ),
     )
+
+
 async def back_to_subjects(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
     stage_id = parts[1]
     owner_id = parts[2]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
-            show_alert=True
+            show_alert=True,
         )
         return
-    await query.answer()
-    response = (
-        supabase
-        .table("subjects")
-        .select("*")
-        .eq("stage_id", stage_id)
-        .eq("is_active", True)
-        .order("sort_order")
-        .execute()
+
+    await show_subjects(
+        update,
+        context,
+        stage_id,
+        0,
     )
-    subjects = response.data
-    if not subjects:
-        await query.edit_message_text(
-            "📚 مواد المرحلة\n\n"
-            "لا توجد مواد مضافة لهذه المرحلة حالياً."
-        )
-        return
-    await query.edit_message_text(
-        "📚 مواد المرحلة\n\n"
-        "اختر المادة:",
-        reply_markup=subjects_keyboard(
-            subjects,
-            query.from_user.id
-        )
-    )
+
+
 async def back_to_stages(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
     if query is None or query.from_user is None:
         return
+
     parts = query.data.split(":")
+
     if len(parts) != 2:
         await query.answer(
             "❌ اختيار غير صالح.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
     owner_id = parts[1]
+
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
-            show_alert=True
+            show_alert=True,
         )
         return
+
     response = (
         supabase
         .table("stages")
@@ -172,11 +254,13 @@ async def back_to_stages(
         .order("stage_number")
         .execute()
     )
+
     await query.answer()
+
     await query.edit_message_text(
         "🎓 اختر المرحلة الدراسية:",
         reply_markup=stages_keyboard(
-            response.data,
-            query.from_user.id
-        )
+            response.data or [],
+            query.from_user.id,
+        ),
     )
