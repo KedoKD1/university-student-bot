@@ -5,6 +5,7 @@ from bot.keyboards.main_menu import (
     main_menu_keyboard,
     back_main_keyboard,
 )
+
 from bot.handlers.stages import show_stages
 
 
@@ -78,6 +79,20 @@ async def main_menu_button(
         )
         return
 
+    if section == "search":
+        await query.edit_message_text(
+            "🔎 البحث\n\n"
+            "اكتب اسم المادة أو الملف أو الملخص أو الرسم "
+            "الذي تريد البحث عنه:",
+            reply_markup=back_main_keyboard(
+                query.from_user.id
+            ),
+        )
+
+        context.user_data["search_mode"] = True
+        context.user_data["search_owner_id"] = query.from_user.id
+        return
+
     if section == "ai":
         await query.edit_message_text(
             "🤖 الذكاء الاصطناعي\n\n"
@@ -132,6 +147,9 @@ async def back_main(
             show_alert=True,
         )
         return
+
+    context.user_data.pop("search_mode", None)
+    context.user_data.pop("search_owner_id", None)
 
     await query.answer()
 
