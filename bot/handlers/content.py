@@ -1,4 +1,12 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+    InputMediaVideo,
+    InputMediaAudio,
+    InputMediaDocument,
+)
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
@@ -11,6 +19,7 @@ from bot.keyboards.content import (
 
 
 MAX_CAPTION_LENGTH = 1024
+MEDIA_GROUP_LIMIT = 10
 
 
 def build_caption(icon, name, description=None):
@@ -112,6 +121,172 @@ async def send_content_item(
         )
 
     return True
+
+
+def _media_type(item):
+    file_type = item.get("file_type")
+
+    if file_type == "photo":
+        return "photo"
+
+    if file_type == "video":
+        return "video"
+
+    if file_type == "audio":
+        return "audio"
+
+    return "document"
+
+
+def _build_media(item, icon):
+    file_type = item.get("file_type")
+    telegram_file_id = item.get("telegram_file_id")
+
+    caption = build_caption(
+        icon,
+        item.get("name"),
+        None,
+    )
+
+    if file_type == "photo":
+        return InputMediaPhoto(
+            media=telegram_file_id,
+            caption=caption,
+        )
+
+    if file_type == "video":
+        return InputMediaVideo(
+            media=telegram_file_id,
+            caption=caption,
+        )
+
+    if file_type == "audio":
+        return InputMediaAudio(
+            media=telegram_file_id,
+            caption=caption,
+        )
+
+    return InputMediaDocument(
+        media=telegram_file_id,
+        caption=caption,
+    )
+
+
+async def send_content_collection(
+    message,
+    items,
+    icon,
+):
+    """
+    إرسال مجموعة محتويات بشكل مجمع قدر الإمكان.
+
+    Telegram يسمح بـ Media Group من نفس النوع:
+    - صور
+    - فيديوهات
+    - صوتيات
+    - مستندات
+
+    لذلك نقسم المحتوى إلى مجموعات حسب النوع.
+    كل مجموعة تحتوي بحد أقصى 10 عناصر.
+    """
+
+    valid_items = [
+        item
+        for item in items
+        if item.get("telegram_file_id")
+    ]
+
+    if not valid_items:
+        return 0, len(items)
+
+    sent_count = 0
+    failed_count = len(items) - len(valid_items)
+
+    groups = []
+
+    current_type = None
+    current_group = []
+
+    for item in valid_items:
+        item_type = _media_type(item)
+
+        if (
+            current_type is None
+            or item_type == current_type
+        ):
+            current_type = item_type
+            current_group.append(item)
+
+        else:
+            groups.append(
+                (current_type, current_group)
+            )
+
+            current_type = item_type
+            current_group = [item]
+
+    if current_group:
+        groups.append(
+            (current_type, current_group)
+        )
+
+    for group_type, group_items in groups:
+        for start in range(
+            0,
+            len(group_items),
+            MEDIA_GROUP_LIMIT,
+        ):
+            chunk = group_items[
+                start:start + MEDIA_GROUP_LIMIT
+            ]
+
+            # Telegram يدعم Media Group للصور والفيديو
+            # وكذلك مجموعات مستقلة للصوتيات والمستندات.
+            try:
+                media = [
+                    _build_media(item, icon)
+                    for item in chunk
+                ]
+
+                await message.reply_media_group(
+                    media=media
+                )
+
+                sent_count += len(chunk)
+
+            except Exception as exc:
+                print(
+                    "MEDIA GROUP SEND ERROR:",
+                    group_type,
+                    type(exc).__name__,
+                    exc,
+                )
+
+                # إذا فشل الـ album، نحاول إرسال
+                # العناصر بشكل منفرد حتى لا يضيع المحتوى.
+                for item in chunk:
+                    try:
+                        sent = await send_content_item(
+                            message,
+                            item,
+                            icon,
+                            include_description=False,
+                        )
+
+                        if sent:
+                            sent_count += 1
+                        else:
+                            failed_count += 1
+
+                    except Exception as item_exc:
+                        print(
+                            "FALLBACK CONTENT SEND ERROR:",
+                            type(item_exc).__name__,
+                            item_exc,
+                        )
+                        failed_count += 1
+
+    return sent_count, failed_count
 
 
 async def get_collection_description(
@@ -231,30 +406,13 @@ async def show_files(
                     exc,
                 )
 
-        sent_count = 0
-        failed_count = 0
-
-        for item in files:
-            try:
-                sent = await send_content_item(
-                    query.message,
-                    item,
-                    "📄",
-                    include_description=False,
-                )
-
-                if sent:
-                    sent_count += 1
-                else:
-                    failed_count += 1
-
-            except Exception as exc:
-                print(
-                    "ALL FILES SEND ERROR:",
-                    type(exc).__name__,
-                    exc,
-                )
-                failed_count += 1
+        sent_count, failed_count = (
+            await send_content_collection(
+                query.message,
+                files,
+                "📄",
+            )
+        )
 
         result_text = (
             "📚 تم إرسال جميع الملفات.\n\n"
@@ -716,30 +874,13 @@ async def show_all_summaries(
                 exc,
             )
 
-    sent_count = 0
-    failed_count = 0
-
-    for item in summaries:
-        try:
-            sent = await send_content_item(
-                query.message,
-                item,
-                "📝",
-                include_description=False,
-            )
-
-            if sent:
-                sent_count += 1
-            else:
-                failed_count += 1
-
-        except Exception as exc:
-            print(
-                "ALL SUMMARIES SEND ERROR:",
-                type(exc).__name__,
-                exc,
-            )
-            failed_count += 1
+    sent_count, failed_count = (
+        await send_content_collection(
+            query.message,
+            summaries,
+            "📝",
+        )
+    )
 
     result_text = (
         "📚 تم إرسال جميع الملخصات.\n\n"
@@ -824,30 +965,13 @@ async def show_all_drawings(
         "⏳ جاري إرسال جميع الرسومات..."
     )
 
-    sent_count = 0
-    failed_count = 0
-
-    for item in drawings:
-        try:
-            sent = await send_content_item(
-                query.message,
-                item,
-                "🎨",
-                include_description=False,
-            )
-
-            if sent:
-                sent_count += 1
-            else:
-                failed_count += 1
-
-        except Exception as exc:
-            print(
-                "ALL DRAWINGS SEND ERROR:",
-                type(exc).__name__,
-                exc,
-            )
-            failed_count += 1
+    sent_count, failed_count = (
+        await send_content_collection(
+            query.message,
+            drawings,
+            "🎨",
+        )
+    )
 
     result_text = (
         "🎨 تم إرسال جميع الرسومات.\n\n"
