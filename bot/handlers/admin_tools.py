@@ -155,6 +155,7 @@ def count_rows(
             exc,
         )
         return 0
+        
 
     users = count_rows("telegram_users")
 
