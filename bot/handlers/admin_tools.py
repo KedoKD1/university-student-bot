@@ -108,24 +108,6 @@ async def admin_tools(
     )
 
 
-async def bot_status(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return
-
-    await query.answer()
-
 def count_rows(
     table,
     active_only=False,
@@ -155,7 +137,25 @@ def count_rows(
             exc,
         )
         return 0
-        
+
+
+async def bot_status(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await is_admin(query.from_user.id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
 
     users = count_rows("telegram_users")
 
