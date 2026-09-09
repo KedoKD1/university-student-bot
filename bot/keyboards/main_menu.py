@@ -17,6 +17,12 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
+                text="🔎 البحث",
+                callback_data=f"main:search:{user_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🤖 الذكاء الاصطناعي",
                 callback_data=f"main:ai:{user_id}",
             )
