@@ -7,6 +7,7 @@ from bot.keyboards.main_menu import (
 )
 
 from bot.handlers.stages import show_stages
+from bot.handlers.search import start_search
 
 
 def main_menu_text():
@@ -23,6 +24,16 @@ async def show_main_menu(
 ):
     if update.message is None or update.effective_user is None:
         return
+
+    context.user_data.pop(
+        "search_mode",
+        None,
+    )
+
+    context.user_data.pop(
+        "search_owner_id",
+        None,
+    )
 
     user_id = update.effective_user.id
 
@@ -60,6 +71,13 @@ async def main_menu_button(
         )
         return
 
+    if section == "search":
+        await start_search(
+            update,
+            context,
+        )
+        return
+
     await query.answer()
 
     if section == "stages":
@@ -71,26 +89,14 @@ async def main_menu_button(
         return
 
     if section == "schedule":
-        from bot.handlers.schedules import show_schedule_stages
+        from bot.handlers.schedules import (
+            show_schedule_stages,
+        )
 
         await show_schedule_stages(
             update,
             context,
         )
-        return
-
-    if section == "search":
-        await query.edit_message_text(
-            "🔎 البحث\n\n"
-            "اكتب اسم المادة أو الملف أو الملخص أو الرسم "
-            "الذي تريد البحث عنه:",
-            reply_markup=back_main_keyboard(
-                query.from_user.id
-            ),
-        )
-
-        context.user_data["search_mode"] = True
-        context.user_data["search_owner_id"] = query.from_user.id
         return
 
     if section == "ai":
@@ -148,8 +154,15 @@ async def back_main(
         )
         return
 
-    context.user_data.pop("search_mode", None)
-    context.user_data.pop("search_owner_id", None)
+    context.user_data.pop(
+        "search_mode",
+        None,
+    )
+
+    context.user_data.pop(
+        "search_owner_id",
+        None,
+    )
 
     await query.answer()
 
