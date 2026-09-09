@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import (
+    ContextTypes,
+    ApplicationHandlerStop,
+)
 
 from bot.database.client import supabase
 
@@ -12,6 +15,39 @@ async def track_user(
 ):
     user = update.effective_user
     chat = update.effective_chat
+
+    # ========================================================
+    # Search text routing
+    # ========================================================
+
+    if (
+        update.message is not None
+        and update.message.text is not None
+        and not update.message.text.startswith("/")
+        and context.user_data.get("search_mode")
+    ):
+        try:
+            from bot.handlers.search import (
+                handle_search_text,
+            )
+
+            handled = await handle_search_text(
+                update,
+                context,
+            )
+
+            if handled:
+                raise ApplicationHandlerStop
+
+        except ApplicationHandlerStop:
+            raise
+
+        except Exception as exc:
+            print(
+                "SEARCH ROUTING ERROR:",
+                type(exc).__name__,
+                exc,
+            )
 
     now = datetime.now(
         timezone.utc
