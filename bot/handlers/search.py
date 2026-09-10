@@ -87,6 +87,16 @@ def result_keyboard(results, user_id):
     return InlineKeyboardMarkup(keyboard)
 
 
+def _escape_search_text(text):
+    return (
+        text
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+        .replace(",", "\\,")
+    )
+
+
 async def start_search(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -111,7 +121,11 @@ async def start_search(
         "• Anatomy\n"
         "• Cell\n"
         "• Lecture 1\n\n"
-        "للخروج من البحث استخدم /start.",
+        "للخروج من البحث استخدم /start."
+    )
+
+    await query.message.reply_text(
+        "✏️ اكتب كلمة البحث هنا:",
         reply_markup=ForceReply(
             selective=True
         ),
@@ -137,7 +151,13 @@ async def handle_search_text(
         "search_owner_id"
     )
 
-    if owner_id is not None and int(owner_id) != user_id:
+    if owner_id is not None:
+        try:
+            owner_id = int(owner_id)
+        except (TypeError, ValueError):
+            owner_id = None
+
+    if owner_id is not None and owner_id != user_id:
         return False
 
     text = (
@@ -168,6 +188,12 @@ async def handle_search_text(
         return True
 
     context.user_data["search_mode"] = False
+    context.user_data.pop(
+        "search_owner_id",
+        None,
+    )
+
+    search_text = _escape_search_text(text)
 
     results = []
 
@@ -184,8 +210,8 @@ async def handle_search_text(
             )
             .eq("is_active", True)
             .or_(
-                f"name.ilike.%{text}%,"
-                f"description.ilike.%{text}%"
+                f"name.ilike.%{search_text}%,"
+                f"description.ilike.%{search_text}%"
             )
             .limit(MAX_RESULTS_PER_TYPE)
             .execute()
@@ -222,8 +248,8 @@ async def handle_search_text(
             .eq("is_active", True)
             .is_("deleted_at", "null")
             .or_(
-                f"name.ilike.%{text}%,"
-                f"description.ilike.%{text}%"
+                f"name.ilike.%{search_text}%,"
+                f"description.ilike.%{search_text}%"
             )
             .limit(MAX_RESULTS_PER_TYPE)
             .execute()
@@ -263,8 +289,8 @@ async def handle_search_text(
             .eq("is_active", True)
             .is_("deleted_at", "null")
             .or_(
-                f"name.ilike.%{text}%,"
-                f"description.ilike.%{text}%"
+                f"name.ilike.%{search_text}%,"
+                f"description.ilike.%{search_text}%"
             )
             .limit(MAX_RESULTS_PER_TYPE)
             .execute()
@@ -304,8 +330,8 @@ async def handle_search_text(
             .eq("is_active", True)
             .is_("deleted_at", "null")
             .or_(
-                f"name.ilike.%{text}%,"
-                f"description.ilike.%{text}%"
+                f"name.ilike.%{search_text}%,"
+                f"description.ilike.%{search_text}%"
             )
             .limit(MAX_RESULTS_PER_TYPE)
             .execute()
@@ -333,6 +359,10 @@ async def handle_search_text(
 
     results = results[:MAX_TOTAL_RESULTS]
 
+    # ========================================================
+    # No Results
+    # ========================================================
+
     if not results:
         await update.message.reply_text(
             f"🔎 نتائج البحث عن: {text}\n\n"
@@ -341,6 +371,10 @@ async def handle_search_text(
             reply_markup=search_keyboard(user_id),
         )
         return True
+
+    # ========================================================
+    # Count Results
+    # ========================================================
 
     counts = {
         "subject": 0,
