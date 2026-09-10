@@ -30,6 +30,7 @@ PERMISSION_MANAGE_FILES = "manage_files"
 PERMISSION_MANAGE_SUMMARIES = "manage_summaries"
 PERMISSION_MANAGE_DRAWINGS = "manage_drawings"
 PERMISSION_MANAGE_SCHEDULES = "manage_schedules"
+PERMISSION_MANAGE_GRADES = "manage_grades"
 
 PERMISSION_MANAGE_DESCRIPTIONS = "manage_descriptions"
 
@@ -54,6 +55,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         PERMISSION_MANAGE_SUMMARIES,
         PERMISSION_MANAGE_DRAWINGS,
         PERMISSION_MANAGE_SCHEDULES,
+        PERMISSION_MANAGE_GRADES,
         PERMISSION_MANAGE_DESCRIPTIONS,
         PERMISSION_VIEW_STATISTICS,
         PERMISSION_MANAGE_ADMINS,
@@ -69,6 +71,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         PERMISSION_MANAGE_SUMMARIES,
         PERMISSION_MANAGE_DRAWINGS,
         PERMISSION_MANAGE_SCHEDULES,
+        PERMISSION_MANAGE_GRADES,
         PERMISSION_MANAGE_DESCRIPTIONS,
         PERMISSION_VIEW_STATISTICS,
         PERMISSION_MANAGE_ANNOUNCEMENTS,
@@ -82,6 +85,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         PERMISSION_MANAGE_SUMMARIES,
         PERMISSION_MANAGE_DRAWINGS,
         PERMISSION_MANAGE_SCHEDULES,
+        PERMISSION_MANAGE_GRADES,
         PERMISSION_MANAGE_DESCRIPTIONS,
     },
 }
@@ -171,13 +175,8 @@ async def has_permission(
     if role is None:
         return False
 
-    # Owner always has everything.
     if role == ROLE_OWNER:
         return True
-
-    # --------------------------------------------------------
-    # First try database permissions.
-    # --------------------------------------------------------
 
     try:
         response = (
@@ -193,10 +192,18 @@ async def has_permission(
         rows = response.data or []
 
         for row in rows:
-            permission_data = row.get("permissions")
+            permission_data = row.get(
+                "permissions"
+            )
 
-            if isinstance(permission_data, dict):
-                if permission_data.get("name") == permission:
+            if isinstance(
+                permission_data,
+                dict,
+            ):
+                if (
+                    permission_data.get("name")
+                    == permission
+                ):
                     return True
 
     except Exception as exc:
@@ -205,10 +212,6 @@ async def has_permission(
             type(exc).__name__,
             exc,
         )
-
-    # --------------------------------------------------------
-    # Fallback to safe defaults.
-    # --------------------------------------------------------
 
     return permission in DEFAULT_ROLE_PERMISSIONS.get(
         role,
@@ -265,6 +268,7 @@ async def require_permission(
 # ============================================================
 
 CALLBACK_PERMISSIONS = {
+
     # Subjects
     "admin_subjects": PERMISSION_MANAGE_SUBJECTS,
     "admin_stage_subjects": PERMISSION_MANAGE_SUBJECTS,
@@ -320,6 +324,19 @@ CALLBACK_PERMISSIONS = {
     "admin_schedule_stage": PERMISSION_MANAGE_SCHEDULES,
     "delete_schedule": PERMISSION_MANAGE_SCHEDULES,
 
+    # Grades
+    "admin_grades": PERMISSION_MANAGE_GRADES,
+    "admin_grade_stage": PERMISSION_MANAGE_GRADES,
+    "admin_grade_list": PERMISSION_MANAGE_GRADES,
+    "manage_grade": PERMISSION_MANAGE_GRADES,
+    "add_grade": PERMISSION_MANAGE_GRADES,
+    "edit_grade": PERMISSION_MANAGE_GRADES,
+    "replace_grade": PERMISSION_MANAGE_GRADES,
+    "disable_grade": PERMISSION_MANAGE_GRADES,
+    "enable_grade": PERMISSION_MANAGE_GRADES,
+    "delete_grade": PERMISSION_MANAGE_GRADES,
+    "confirm_delete_grade": PERMISSION_MANAGE_GRADES,
+
     # Descriptions
     "bundle_descriptions": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_type": PERMISSION_MANAGE_DESCRIPTIONS,
@@ -346,6 +363,11 @@ def permission_for_callback(callback_data: str):
     if not callback_data:
         return None
 
-    prefix = callback_data.split(":", 1)[0]
+    prefix = callback_data.split(
+        ":",
+        1,
+    )[0]
 
-    return CALLBACK_PERMISSIONS.get(prefix)
+    return CALLBACK_PERMISSIONS.get(
+        prefix
+    )
