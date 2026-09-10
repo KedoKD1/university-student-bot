@@ -91,12 +91,7 @@ from bot.handlers.admin_files import (
 
 
 from bot.handlers.grades import (
-    show_grades,
-    grades_stage,
-    grades_locked,
-    grades_back,
-    grade_file,
-    grades_all,
+    grades_callback,
 )
 
 
@@ -344,44 +339,44 @@ def main():
     )
 
 
-    # ========================================================
-    # Student Grades
-    # ========================================================
+# ========================================================
+# Student Grades
+# ========================================================
 
-    application.add_handler(
-        CallbackQueryHandler(
-            grades_stage,
-            pattern=r"^grades_stage:",
-        )
+application.add_handler(
+    CallbackQueryHandler(
+        grades_stage,
+        pattern=r"^grades_stage:",
     )
+)
 
-    application.add_handler(
-        CallbackQueryHandler(
-            grades_locked,
-            pattern=r"^grades_locked:",
-        )
+application.add_handler(
+    CallbackQueryHandler(
+        grades_locked,
+        pattern=r"^grades_locked:",
     )
+)
 
-    application.add_handler(
-        CallbackQueryHandler(
-            grades_back,
-            pattern=r"^grades_back:",
-        )
+application.add_handler(
+    CallbackQueryHandler(
+        grades_back,
+        pattern=r"^grades_back:",
     )
+)
 
-    application.add_handler(
-        CallbackQueryHandler(
-            grades_all,
-            pattern=r"^grades_all:",
-        )
+application.add_handler(
+    CallbackQueryHandler(
+        grades_all,
+        pattern=r"^grades_all:",
     )
+)
 
-    application.add_handler(
-        CallbackQueryHandler(
-            grade_file,
-            pattern=r"^grade_file:",
-        )
+application.add_handler(
+    CallbackQueryHandler(
+        grade_file,
+        pattern=r"^grade_file:",
     )
+)    
 
 
     # ========================================================
