@@ -988,11 +988,11 @@ application.add_handler(
     )
 
     application.add_handler(
-        CallbackQueryHandler(
-            admin_back,
-            pattern=r"^admin_back:",
-        )
+    CallbackQueryHandler(
+        admin_back,
+        pattern=r"^admin_back$",
     )
+)
 
 
     # ========================================================
