@@ -29,6 +29,7 @@ from bot.handlers.subjects import (
     back_to_stages,
     back_to_subjects,
     subject_button,
+    subjects_page_button,
 )
 
 
@@ -339,6 +340,13 @@ def main():
     # ========================================================
     # Subjects
     # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            subjects_page_button,
+            pattern=r"^subjects_page:",
+        )
+    )
 
     application.add_handler(
         CallbackQueryHandler(
