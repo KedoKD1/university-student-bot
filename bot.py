@@ -90,11 +90,6 @@ from bot.handlers.admin_files import (
 )
 
 
-from bot.handlers.grades import (
-    grades_callback,
-)
-
-
 from bot.handlers.admin_summaries import (
     admin_summaries,
     admin_summary_stage,
@@ -337,46 +332,6 @@ def main():
             pattern=r"^locked_schedule:",
         )
     )
-
-
-# ========================================================
-# Student Grades
-# ========================================================
-
-application.add_handler(
-    CallbackQueryHandler(
-        grades_stage,
-        pattern=r"^grades_stage:",
-    )
-)
-
-application.add_handler(
-    CallbackQueryHandler(
-        grades_locked,
-        pattern=r"^grades_locked:",
-    )
-)
-
-application.add_handler(
-    CallbackQueryHandler(
-        grades_back,
-        pattern=r"^grades_back:",
-    )
-)
-
-application.add_handler(
-    CallbackQueryHandler(
-        grades_all,
-        pattern=r"^grades_all:",
-    )
-)
-
-application.add_handler(
-    CallbackQueryHandler(
-        grade_file,
-        pattern=r"^grade_file:",
-    )
-)    
 
 
     # ========================================================
@@ -988,11 +943,11 @@ application.add_handler(
     )
 
     application.add_handler(
-    CallbackQueryHandler(
-        admin_back,
-        pattern=r"^admin_back$",
+        CallbackQueryHandler(
+            admin_back,
+            pattern=r"^admin_back$",
+        )
     )
-)
 
 
     # ========================================================
