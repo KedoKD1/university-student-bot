@@ -52,3 +52,24 @@ def back_main_keyboard(user_id):
             )
         ]
     ])
+
+
+async def main_menu_button(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data.split(":")
+    section = data[1]
+
+    if section == "grades":
+        from bot.handlers.grades import show_grades
+
+        await show_grades(
+            update,
+            context,
+        )
+        return
+
+    if section == "ai":
+        # المنطق الخاص بالذكاء الاصطناعي هنا
+        pass
