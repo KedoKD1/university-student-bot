@@ -8,6 +8,7 @@ from bot.keyboards.main_menu import (
 
 from bot.handlers.stages import show_stages
 from bot.handlers.search import start_search
+from bot.handlers.grades import grades_callback
 
 
 def main_menu_text():
@@ -25,15 +26,8 @@ async def show_main_menu(
     if update.message is None or update.effective_user is None:
         return
 
-    context.user_data.pop(
-        "search_mode",
-        None,
-    )
-
-    context.user_data.pop(
-        "search_owner_id",
-        None,
-    )
+    context.user_data.pop("search_mode", None)
+    context.user_data.pop("search_owner_id", None)
 
     user_id = update.effective_user.id
 
@@ -54,21 +48,30 @@ async def main_menu_button(
 
     parts = query.data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) < 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
 
-    section = parts[1]
-    owner_id = parts[2]
+    owner_id = parts[-1]
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
         )
+        return
+
+    section = parts[1]
+
+    if (
+        section == "grades"
+        or section.startswith("grades_")
+        or section == "grade_file"
+    ):
+        await grades_callback(update, context)
         return
 
     await query.answer()
@@ -82,11 +85,16 @@ async def main_menu_button(
         return
 
     if section == "schedule":
-        from bot.handlers.schedules import (
-            show_schedule_stages,
-        )
+        from bot.handlers.schedules import show_schedule_stages
 
         await show_schedule_stages(
+            update,
+            context,
+        )
+        return
+
+    if section == "search":
+        await start_search(
             update,
             context,
         )
@@ -147,15 +155,8 @@ async def back_main(
         )
         return
 
-    context.user_data.pop(
-        "search_mode",
-        None,
-    )
-
-    context.user_data.pop(
-        "search_owner_id",
-        None,
-    )
+    context.user_data.pop("search_mode", None)
+    context.user_data.pop("search_owner_id", None)
 
     await query.answer()
 
