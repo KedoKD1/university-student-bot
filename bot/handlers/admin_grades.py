@@ -5,6 +5,7 @@ from telegram import (
     InlineKeyboardMarkup,
     Update,
 )
+
 from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
@@ -14,7 +15,7 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+
 from bot.utils.permissions import (
     PERMISSION_MANAGE_GRADES,
     has_permission,
@@ -25,11 +26,14 @@ from bot.utils.permissions import (
 # Conversation States
 # ============================================================
 
-ADD_GRADE_NAME, ADD_GRADE_DESCRIPTION, ADD_GRADE_UPLOAD = range(3)
+ADD_GRADE_NAME = 1
+ADD_GRADE_DESCRIPTION = 2
+ADD_GRADE_UPLOAD = 3
 
-EDIT_GRADE_NAME, EDIT_GRADE_DESCRIPTION = range(3, 5)
+EDIT_GRADE_NAME = 4
+EDIT_GRADE_DESCRIPTION = 5
 
-REPLACE_GRADE_UPLOAD = 5
+REPLACE_GRADE_UPLOAD = 6
 
 
 # ============================================================
@@ -107,6 +111,9 @@ def grades_stage_keyboard(stages):
     keyboard = []
 
     for stage in stages:
+        if not stage.get("is_active", True):
+            continue
+
         keyboard.append([
             InlineKeyboardButton(
                 text=f"📚 المرحلة {stage['stage_number']}",
@@ -130,11 +137,18 @@ def grades_list_keyboard(files, stage_id):
     keyboard = []
 
     for grade_file in files:
-        status = "🟢" if grade_file["is_active"] else "🔴"
+        status = (
+            "🟢"
+            if grade_file.get("is_active")
+            else "🔴"
+        )
 
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{status} {grade_file['name']}",
+                text=(
+                    f"{status} "
+                    f"{grade_file['name']}"
+                ),
                 callback_data=(
                     f"manage_grade:"
                     f"{grade_file['id']}:{stage_id}"
@@ -241,8 +255,19 @@ def delete_grade_keyboard(file_id, stage_id):
                     f"{file_id}:{stage_id}"
                 ),
             ),
-        ],
+        ]
     ])
+
+
+# ============================================================
+# Permission helper
+# ============================================================
+
+async def can_manage_grades(user_id):
+    return await has_permission(
+        user_id,
+        PERMISSION_MANAGE_GRADES,
+    )
 
 
 # ============================================================
@@ -258,11 +283,8 @@ async def admin_grades(
     if query is None or query.from_user is None:
         return
 
-    user_id = query.from_user.id
-
-    if not await has_permission(
-        user_id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية إدارة الدرجات.",
@@ -287,19 +309,29 @@ async def admin_grades(
     if not stages:
         await query.edit_message_text(
             "📝 إدارة الدرجات\n\n"
-            "❌ لا توجد مراحل في قاعدة البيانات."
+            "❌ لا توجد مراحل في قاعدة البيانات.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🛠️ لوحة الإدارة",
+                        callback_data="admin_back",
+                    )
+                ]
+            ]),
         )
         return
 
     await query.edit_message_text(
         "📝 إدارة الدرجات\n\n"
         "اختر المرحلة:",
-        reply_markup=grades_stage_keyboard(stages),
+        reply_markup=grades_stage_keyboard(
+            stages
+        ),
     )
 
 
 # ============================================================
-# Stage → Grade Files
+# Stage
 # ============================================================
 
 async def admin_grade_stage(
@@ -311,11 +343,8 @@ async def admin_grade_stage(
     if query is None or query.from_user is None:
         return
 
-    user_id = query.from_user.id
-
-    if not await has_permission(
-        user_id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -332,16 +361,20 @@ async def admin_grade_stage(
         )
         return
 
-    stage_id = parts[1]
+    stage_id = int(parts[1])
 
     await query.answer()
 
     await show_grade_list(
         update,
         context,
-        int(stage_id),
+        stage_id,
     )
 
+
+# ============================================================
+# Grade List
+# ============================================================
 
 async def show_grade_list(
     update: Update,
@@ -349,6 +382,9 @@ async def show_grade_list(
     stage_id: int,
 ):
     query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
 
     response = (
         supabase
@@ -366,15 +402,15 @@ async def show_grade_list(
 
     files = response.data or []
 
-    text = (
-        "📝 إدارة الدرجات\n\n"
-        "الملفات الموجودة:"
-    )
-
-    if not files:
+    if files:
         text = (
             "📝 إدارة الدرجات\n\n"
-            "لا توجد ملفات درجات لهذه المرحلة حالياً."
+            "اختر ملف الدرجات الذي تريد إدارته:"
+        )
+    else:
+        text = (
+            "📝 إدارة الدرجات\n\n"
+            "❌ لا توجد ملفات درجات لهذه المرحلة حالياً."
         )
 
     await query.edit_message_text(
@@ -399,9 +435,8 @@ async def manage_grade(
     if query is None or query.from_user is None:
         return
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -447,7 +482,7 @@ async def manage_grade(
 
     status = (
         "🟢 فعال"
-        if grade_file["is_active"]
+        if grade_file.get("is_active")
         else "🔴 معطل"
     )
 
@@ -464,7 +499,7 @@ async def manage_grade(
         reply_markup=grade_manage_keyboard(
             file_id,
             stage_id,
-            grade_file["is_active"],
+            grade_file.get("is_active", False),
         ),
     )
 
@@ -480,11 +515,10 @@ async def add_grade(
     query = update.callback_query
 
     if query is None or query.from_user is None:
-        return
+        return ConversationHandler.END
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -560,7 +594,7 @@ async def add_grade_description(
 
     await update.message.reply_text(
         "📤 الآن أرسل ملف الدرجات.\n\n"
-        "يمكن إرسال مستند أو صورة أو فيديو أو ملف صوتي."
+        "المسموح: مستند، صورة، فيديو أو ملف صوتي."
     )
 
     return ADD_GRADE_UPLOAD
@@ -573,8 +607,12 @@ async def add_grade_upload(
     if update.message is None:
         return ADD_GRADE_UPLOAD
 
-    file_type, telegram_file_id, file_size = (
-        extract_telegram_file(update.message)
+    (
+        file_type,
+        telegram_file_id,
+        file_size,
+    ) = extract_telegram_file(
+        update.message
     )
 
     if not telegram_file_id:
@@ -587,9 +625,11 @@ async def add_grade_upload(
     stage_id = context.user_data.get(
         "admin_grade_stage_id"
     )
+
     name = context.user_data.get(
         "admin_grade_name"
     )
+
     description = context.user_data.get(
         "admin_grade_description"
     )
@@ -605,15 +645,20 @@ async def add_grade_upload(
         return ConversationHandler.END
 
     try:
-        supabase.table("grade_files").insert({
-            "stage_id": stage_id,
-            "name": name,
-            "description": description,
-            "telegram_file_id": telegram_file_id,
-            "file_type": file_type,
-            "file_size": file_size,
-            "is_active": True,
-        }).execute()
+        (
+            supabase
+            .table("grade_files")
+            .insert({
+                "stage_id": stage_id,
+                "name": name,
+                "description": description,
+                "telegram_file_id": telegram_file_id,
+                "file_type": file_type,
+                "file_size": file_size,
+                "is_active": True,
+            })
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -652,9 +697,8 @@ async def edit_grade(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -677,7 +721,9 @@ async def edit_grade(
     response = (
         supabase
         .table("grade_files")
-        .select("id, name, description")
+        .select(
+            "id, name, description"
+        )
         .eq("id", file_id)
         .eq("stage_id", stage_id)
         .is_("deleted_at", "null")
@@ -696,14 +742,20 @@ async def edit_grade(
 
     grade_file = files[0]
 
-    context.user_data["admin_grade_file_id"] = file_id
-    context.user_data["admin_grade_stage_id"] = stage_id
+    context.user_data[
+        "admin_grade_file_id"
+    ] = file_id
+
+    context.user_data[
+        "admin_grade_stage_id"
+    ] = stage_id
 
     await query.answer()
 
     await query.message.reply_text(
         "✏️ تعديل ملف الدرجات\n\n"
-        f"الاسم الحالي:\n{grade_file['name']}\n\n"
+        f"الاسم الحالي:\n"
+        f"{grade_file['name']}\n\n"
         "أرسل الاسم الجديد:"
     )
 
@@ -727,7 +779,9 @@ async def edit_grade_name(
         )
         return EDIT_GRADE_NAME
 
-    context.user_data["admin_grade_name"] = name
+    context.user_data[
+        "admin_grade_name"
+    ] = name
 
     await update.message.reply_text(
         "📝 أرسل الوصف الجديد.\n\n"
@@ -751,9 +805,11 @@ async def edit_grade_description(
     file_id = context.user_data.get(
         "admin_grade_file_id"
     )
+
     stage_id = context.user_data.get(
         "admin_grade_stage_id"
     )
+
     name = context.user_data.get(
         "admin_grade_name"
     )
@@ -768,19 +824,20 @@ async def edit_grade_description(
         return ConversationHandler.END
 
     try:
-        supabase.table("grade_files").update({
-            "name": name,
-            "description": description,
-            "updated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-        }).eq(
-            "id",
-            file_id,
-        ).eq(
-            "stage_id",
-            stage_id,
-        ).execute()
+        (
+            supabase
+            .table("grade_files")
+            .update({
+                "name": name,
+                "description": description,
+                "updated_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
+            })
+            .eq("id", file_id)
+            .eq("stage_id", stage_id)
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -807,7 +864,7 @@ async def edit_grade_description(
 
 
 # ============================================================
-# Replace Grade File
+# Replace File
 # ============================================================
 
 async def replace_grade(
@@ -819,9 +876,8 @@ async def replace_grade(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -841,8 +897,13 @@ async def replace_grade(
     file_id = int(parts[1])
     stage_id = int(parts[2])
 
-    context.user_data["admin_grade_file_id"] = file_id
-    context.user_data["admin_grade_stage_id"] = stage_id
+    context.user_data[
+        "admin_grade_file_id"
+    ] = file_id
+
+    context.user_data[
+        "admin_grade_stage_id"
+    ] = stage_id
 
     await query.answer()
 
@@ -861,8 +922,12 @@ async def replace_grade_upload(
     if update.message is None:
         return REPLACE_GRADE_UPLOAD
 
-    file_type, telegram_file_id, file_size = (
-        extract_telegram_file(update.message)
+    (
+        file_type,
+        telegram_file_id,
+        file_size,
+    ) = extract_telegram_file(
+        update.message
     )
 
     if not telegram_file_id:
@@ -875,6 +940,7 @@ async def replace_grade_upload(
     file_id = context.user_data.get(
         "admin_grade_file_id"
     )
+
     stage_id = context.user_data.get(
         "admin_grade_stage_id"
     )
@@ -889,20 +955,21 @@ async def replace_grade_upload(
         return ConversationHandler.END
 
     try:
-        supabase.table("grade_files").update({
-            "telegram_file_id": telegram_file_id,
-            "file_type": file_type,
-            "file_size": file_size,
-            "updated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-        }).eq(
-            "id",
-            file_id,
-        ).eq(
-            "stage_id",
-            stage_id,
-        ).execute()
+        (
+            supabase
+            .table("grade_files")
+            .update({
+                "telegram_file_id": telegram_file_id,
+                "file_type": file_type,
+                "file_size": file_size,
+                "updated_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
+            })
+            .eq("id", file_id)
+            .eq("stage_id", stage_id)
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -964,9 +1031,8 @@ async def toggle_grade(
     if query is None or query.from_user is None:
         return
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -987,21 +1053,20 @@ async def toggle_grade(
     stage_id = int(parts[2])
 
     try:
-        supabase.table("grade_files").update({
-            "is_active": active,
-            "updated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-        }).eq(
-            "id",
-            file_id,
-        ).eq(
-            "stage_id",
-            stage_id,
-        ).is_(
-            "deleted_at",
-            "null",
-        ).execute()
+        (
+            supabase
+            .table("grade_files")
+            .update({
+                "is_active": active,
+                "updated_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
+            })
+            .eq("id", file_id)
+            .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
 
     except Exception as exc:
         print(
@@ -1039,9 +1104,8 @@ async def delete_grade(
     if query is None or query.from_user is None:
         return
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -1066,8 +1130,8 @@ async def delete_grade(
     await query.edit_message_text(
         "⚠️ تأكيد حذف ملف الدرجات\n\n"
         "هل أنت متأكد من حذف هذا الملف؟\n\n"
-        "ℹ️ سيتم حذفه بشكل آمن من واجهة الطلاب، "
-        "لكن البيانات لن تُحذف نهائياً.",
+        "ℹ️ سيتم إخفاؤه عن الطلاب "
+        "ولن يتم حذفه نهائياً من قاعدة البيانات.",
         reply_markup=delete_grade_keyboard(
             file_id,
             stage_id,
@@ -1084,9 +1148,8 @@ async def confirm_delete_grade(
     if query is None or query.from_user is None:
         return
 
-    if not await has_permission(
-        query.from_user.id,
-        PERMISSION_MANAGE_GRADES,
+    if not await can_manage_grades(
+        query.from_user.id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -1106,25 +1169,24 @@ async def confirm_delete_grade(
     file_id = int(parts[1])
     stage_id = int(parts[2])
 
+    now = datetime.now(
+        timezone.utc
+    ).isoformat()
+
     try:
-        supabase.table("grade_files").update({
-            "deleted_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-            "is_active": False,
-            "updated_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
-        }).eq(
-            "id",
-            file_id,
-        ).eq(
-            "stage_id",
-            stage_id,
-        ).is_(
-            "deleted_at",
-            "null",
-        ).execute()
+        (
+            supabase
+            .table("grade_files")
+            .update({
+                "deleted_at": now,
+                "is_active": False,
+                "updated_at": now,
+            })
+            .eq("id", file_id)
+            .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
 
     except Exception as exc:
         print(
