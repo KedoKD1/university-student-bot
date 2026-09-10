@@ -14,12 +14,6 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
-                text="📝 الدرجات",
-                callback_data=f"main:grades:{user_id}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text="📅 الجداول",
                 callback_data=f"main:schedule:{user_id}",
             )
@@ -28,7 +22,11 @@ def main_menu_keyboard(user_id):
             InlineKeyboardButton(
                 text="🔎 البحث",
                 callback_data=f"main:search:{user_id}",
-            )
+            ),
+            InlineKeyboardButton(
+                text="📝 الدرجات",
+                callback_data=f"main:grades:{user_id}",
+            ),
         ],
         [
             InlineKeyboardButton(
