@@ -139,6 +139,19 @@ from bot.handlers.admin_schedules import (
 )
 
 
+from bot.handlers.admin_grades import (
+    admin_grades,
+    admin_grade_stage,
+    show_grade_list,
+    manage_grade,
+    disable_grade,
+    enable_grade,
+    delete_grade,
+    confirm_delete_grade,
+    grade_conversation_handler,
+)
+
+
 from bot.handlers.admin_tools import (
     admin_tools,
     bot_status,
@@ -176,6 +189,10 @@ from bot.utils.config import (
 )
 
 
+# ============================================================
+# Search text handler
+# ============================================================
+
 async def search_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -188,6 +205,10 @@ async def search_text_handler(
     if handled:
         return
 
+
+# ============================================================
+# Main
+# ============================================================
 
 def main():
     validate_config()
@@ -300,6 +321,10 @@ def main():
     )
 
     application.add_handler(
+        grade_conversation_handler()
+    )
+
+    application.add_handler(
         bundle_description_conversation_handler()
     )
 
@@ -336,8 +361,6 @@ def main():
 
     # ========================================================
     # Search Button
-    # IMPORTANT:
-    # This MUST come before the generic ^main: handler.
     # ========================================================
 
     application.add_handler(
@@ -840,6 +863,67 @@ def main():
         CallbackQueryHandler(
             delete_schedule,
             pattern=r"^delete_schedule:",
+        )
+    )
+
+
+    # ========================================================
+    # Admin Grades
+    # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_grades,
+            pattern=r"^admin_grades$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_grade_stage,
+            pattern=r"^admin_grade_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_grade_list,
+            pattern=r"^admin_grade_list:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_grade,
+            pattern=r"^manage_grade:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            disable_grade,
+            pattern=r"^disable_grade:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_grade,
+            pattern=r"^enable_grade:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_grade,
+            pattern=r"^delete_grade:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            confirm_delete_grade,
+            pattern=r"^confirm_delete_grade:",
         )
     )
 
