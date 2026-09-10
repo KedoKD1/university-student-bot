@@ -71,13 +71,6 @@ async def main_menu_button(
         )
         return
 
-    if section == "search":
-        await start_search(
-            update,
-            context,
-        )
-        return
-
     await query.answer()
 
     if section == "stages":
