@@ -90,6 +90,16 @@ from bot.handlers.admin_files import (
 )
 
 
+from bot.handlers.grades import (
+    show_grades,
+    grades_stage,
+    grades_locked,
+    grades_back,
+    grade_file,
+    grades_all,
+)
+
+
 from bot.handlers.admin_summaries import (
     admin_summaries,
     admin_summary_stage,
