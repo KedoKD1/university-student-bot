@@ -283,54 +283,54 @@ def main():
     )
 
 
-    # ========================================================
-    # Search Text
-    # ========================================================
+# ========================================================
+# Admin Conversations
+# ========================================================
 
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            search_text_handler,
-        ),
-        group=0,
-    )
+application.add_handler(
+    subject_conversation_handler()
+)
+
+application.add_handler(
+    file_conversation_handler()
+)
+
+application.add_handler(
+    summary_conversation_handler()
+)
+
+application.add_handler(
+    drawing_conversation_handler()
+)
+
+application.add_handler(
+    schedule_conversation_handler()
+)
+
+application.add_handler(
+    grade_conversation_handler()
+)
+
+application.add_handler(
+    bundle_description_conversation_handler()
+)
+
+application.add_handler(
+    role_conversation_handler()
+)
 
 
-    # ========================================================
-    # Admin Conversations
-    # ========================================================
+# ========================================================
+# Search Text
+# ========================================================
 
-    application.add_handler(
-        subject_conversation_handler()
-    )
-
-    application.add_handler(
-        file_conversation_handler()
-    )
-
-    application.add_handler(
-        summary_conversation_handler()
-    )
-
-    application.add_handler(
-        drawing_conversation_handler()
-    )
-
-    application.add_handler(
-        schedule_conversation_handler()
-    )
-
-    application.add_handler(
-        grade_conversation_handler()
-    )
-
-    application.add_handler(
-        bundle_description_conversation_handler()
-    )
-
-    application.add_handler(
-        role_conversation_handler()
-    )
+application.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        search_text_handler,
+    ),
+    group=0,
+)
 
 
     # ========================================================
