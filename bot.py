@@ -4,7 +4,10 @@ from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    MessageHandler,
     TypeHandler,
+    ContextTypes,
+    filters,
 )
 
 
@@ -15,6 +18,12 @@ from bot.handlers.main_menu import (
     show_main_menu,
     main_menu_button,
     back_main,
+)
+
+
+from bot.handlers.search import (
+    start_search,
+    handle_search_text,
 )
 
 
@@ -167,6 +176,19 @@ from bot.utils.config import (
 )
 
 
+async def search_text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    handled = await handle_search_text(
+        update,
+        context,
+    )
+
+    if handled:
+        return
+
+
 def main():
     validate_config()
 
@@ -241,6 +263,19 @@ def main():
 
 
     # ========================================================
+    # Search Text
+    # ========================================================
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            search_text_handler,
+        ),
+        group=0,
+    )
+
+
+    # ========================================================
     # Admin Conversations
     # ========================================================
 
@@ -295,6 +330,20 @@ def main():
         CallbackQueryHandler(
             locked_schedule,
             pattern=r"^locked_schedule:",
+        )
+    )
+
+
+    # ========================================================
+    # Search Button
+    # IMPORTANT:
+    # This MUST come before the generic ^main: handler.
+    # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            start_search,
+            pattern=r"^main:search:",
         )
     )
 
