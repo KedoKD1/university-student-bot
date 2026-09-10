@@ -14,6 +14,7 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_SUMMARIES,
     PERMISSION_MANAGE_DRAWINGS,
     PERMISSION_MANAGE_SCHEDULES,
+    PERMISSION_MANAGE_GRADES,
     PERMISSION_MANAGE_DESCRIPTIONS,
     PERMISSION_VIEW_STATISTICS,
     PERMISSION_MANAGE_ADMINS,
@@ -44,15 +45,11 @@ async def is_admin(user_id: int) -> bool:
 
 
 # ============================================================
-# Permission-aware admin keyboard
+# Admin keyboard
 # ============================================================
 
 async def admin_keyboard(user_id: int):
     keyboard = []
-
-    # --------------------------------------------------------
-    # Subjects
-    # --------------------------------------------------------
 
     if await has_permission(
         user_id,
@@ -65,10 +62,6 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    # --------------------------------------------------------
-    # Files
-    # --------------------------------------------------------
-
     if await has_permission(
         user_id,
         PERMISSION_MANAGE_FILES,
@@ -79,10 +72,6 @@ async def admin_keyboard(user_id: int):
                 callback_data="admin_files",
             )
         ])
-
-    # --------------------------------------------------------
-    # Summaries
-    # --------------------------------------------------------
 
     if await has_permission(
         user_id,
@@ -95,10 +84,6 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    # --------------------------------------------------------
-    # Drawings
-    # --------------------------------------------------------
-
     if await has_permission(
         user_id,
         PERMISSION_MANAGE_DRAWINGS,
@@ -109,10 +94,6 @@ async def admin_keyboard(user_id: int):
                 callback_data="admin_drawings",
             )
         ])
-
-    # --------------------------------------------------------
-    # Schedules
-    # --------------------------------------------------------
 
     if await has_permission(
         user_id,
@@ -125,9 +106,16 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    # --------------------------------------------------------
-    # Administration tools
-    # --------------------------------------------------------
+    if await has_permission(
+        user_id,
+        PERMISSION_MANAGE_GRADES,
+    ):
+        keyboard.append([
+            InlineKeyboardButton(
+                "📝 إدارة الدرجات",
+                callback_data="admin_grades",
+            )
+        ])
 
     has_tools = (
         await has_permission(
@@ -152,10 +140,6 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    # --------------------------------------------------------
-    # Announcements
-    # --------------------------------------------------------
-
     if await has_permission(
         user_id,
         PERMISSION_MANAGE_ANNOUNCEMENTS,
@@ -167,10 +151,6 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    # --------------------------------------------------------
-    # Settings
-    # --------------------------------------------------------
-
     if await has_permission(
         user_id,
         PERMISSION_MANAGE_SETTINGS,
@@ -181,10 +161,6 @@ async def admin_keyboard(user_id: int):
                 callback_data="admin_settings",
             )
         ])
-
-    # --------------------------------------------------------
-    # Return
-    # --------------------------------------------------------
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -333,7 +309,7 @@ async def delete_subject(
                 InlineKeyboardButton(
                     "🔒 نعم، عطّل المادة",
                     callback_data=(
-                        f"admin_confirm_delete_subject:"
+                        "admin_confirm_delete_subject:"
                         f"{subject_id}:{stage_id}"
                     ),
                 )
@@ -342,7 +318,7 @@ async def delete_subject(
                 InlineKeyboardButton(
                     "❌ إلغاء",
                     callback_data=(
-                        f"manage_subject:"
+                        "manage_subject:"
                         f"{subject_id}:{stage_id}"
                     ),
                 )
@@ -394,7 +370,9 @@ async def confirm_delete_subject(
     response = (
         supabase
         .table("subjects")
-        .select("id, name, is_active")
+        .select(
+            "id, name, is_active"
+        )
         .eq("id", subject_id)
         .eq("stage_id", stage_id)
         .limit(1)
@@ -411,7 +389,6 @@ async def confirm_delete_subject(
         return
 
     subject = subjects[0]
-    subject_name = subject["name"]
 
     await query.answer(
         "⏳ جارٍ تعطيل المادة..."
@@ -444,7 +421,7 @@ async def confirm_delete_subject(
 
     await query.edit_message_text(
         "✅ تم تعطيل المادة بنجاح.\n\n"
-        f"📘 المادة: {subject_name}\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
         "🔒 تم إخفاؤها عن الطلاب.\n"
         "📦 البيانات المرتبطة بالمادة لم تُحذف.",
         reply_markup=InlineKeyboardMarkup([
@@ -452,8 +429,7 @@ async def confirm_delete_subject(
                 InlineKeyboardButton(
                     "⬅️ العودة إلى المواد",
                     callback_data=(
-                        f"admin_stage_subjects:"
-                        f"{stage_id}"
+                        f"admin_stage_subjects:{stage_id}"
                     ),
                 )
             ],
@@ -493,10 +469,6 @@ async def admin_button(
         )
         return
 
-    # --------------------------------------------------------
-    # Subject deletion / disabling
-    # --------------------------------------------------------
-
     if query.data.startswith(
         "admin_delete_subject:"
     ):
@@ -517,19 +489,11 @@ async def admin_button(
 
     await query.answer()
 
-    # --------------------------------------------------------
-    # Announcements
-    # --------------------------------------------------------
-
     if query.data == "admin_announcements":
         await query.edit_message_text(
             "📢 الإعلانات\n\n"
             "هذا القسم قيد الإنشاء."
         )
-
-    # --------------------------------------------------------
-    # Settings
-    # --------------------------------------------------------
 
     elif query.data == "admin_settings":
         await query.edit_message_text(
