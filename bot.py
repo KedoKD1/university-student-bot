@@ -236,13 +236,29 @@ from bot.utils.config import (
 
 
 # ============================================================
-# Search text handler
+# Search + Quiz text handler
 # ============================================================
 
 async def search_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    # --------------------------------------------------------
+    # Quiz text answers
+    # --------------------------------------------------------
+
+    handled = await handle_quiz_text(
+        update,
+        context,
+    )
+
+    if handled:
+        return
+
+    # --------------------------------------------------------
+    # Search text
+    # --------------------------------------------------------
+
     handled = await handle_search_text(
         update,
         context,
@@ -329,7 +345,7 @@ def main():
     # Admin Conversations
     # IMPORTANT:
     # Keep all ConversationHandlers before the generic
-    # search MessageHandler.
+    # text MessageHandler.
     # ========================================================
 
     application.add_handler(
@@ -369,7 +385,7 @@ def main():
     )
 
     # ========================================================
-    # Search Text
+    # Text Handler
     # ========================================================
 
     application.add_handler(
@@ -452,6 +468,31 @@ def main():
         CallbackQueryHandler(
             start_search,
             pattern=r"^main:search:",
+        )
+    )
+
+    # ========================================================
+    # Quizzes
+    # IMPORTANT:
+    # This handler must exist for all quiz callbacks:
+    #
+    # quiz:stages
+    # quiz:subjects
+    # quiz:section
+    # quiz:type
+    # quiz:difficulty
+    # quiz:count
+    # quiz:start
+    # quiz:answer
+    # quiz:cancel
+    # quiz:locked
+    # quiz:subject_locked
+    # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            quiz_callback,
+            pattern=r"^quiz:",
         )
     )
 
