@@ -238,7 +238,6 @@ def main():
         .build()
     )
 
-
     # ========================================================
     # Permission Guard
     # ========================================================
@@ -249,7 +248,6 @@ def main():
         ),
         group=-2,
     )
-
 
     # ========================================================
     # Telegram User Tracking
@@ -262,7 +260,6 @@ def main():
         ),
         group=-1,
     )
-
 
     # ========================================================
     # Commands
@@ -282,56 +279,53 @@ def main():
         )
     )
 
+    # ========================================================
+    # Admin Conversations
+    # ========================================================
 
-# ========================================================
-# Admin Conversations
-# ========================================================
+    application.add_handler(
+        subject_conversation_handler()
+    )
 
-application.add_handler(
-    subject_conversation_handler()
-)
+    application.add_handler(
+        file_conversation_handler()
+    )
 
-application.add_handler(
-    file_conversation_handler()
-)
+    application.add_handler(
+        summary_conversation_handler()
+    )
 
-application.add_handler(
-    summary_conversation_handler()
-)
+    application.add_handler(
+        drawing_conversation_handler()
+    )
 
-application.add_handler(
-    drawing_conversation_handler()
-)
+    application.add_handler(
+        schedule_conversation_handler()
+    )
 
-application.add_handler(
-    schedule_conversation_handler()
-)
+    application.add_handler(
+        grade_conversation_handler()
+    )
 
-application.add_handler(
-    grade_conversation_handler()
-)
+    application.add_handler(
+        bundle_description_conversation_handler()
+    )
 
-application.add_handler(
-    bundle_description_conversation_handler()
-)
+    application.add_handler(
+        role_conversation_handler()
+    )
 
-application.add_handler(
-    role_conversation_handler()
-)
+    # ========================================================
+    # Search Text
+    # ========================================================
 
-
-# ========================================================
-# Search Text
-# ========================================================
-
-application.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        search_text_handler,
-    ),
-    group=0,
-)
-
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            search_text_handler,
+        ),
+        group=0,
+    )
 
     # ========================================================
     # Student Schedule
@@ -358,7 +352,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Search Button
     # ========================================================
@@ -369,7 +362,6 @@ application.add_handler(
             pattern=r"^main:search:",
         )
     )
-
 
     # ========================================================
     # Main Menu
@@ -389,7 +381,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Stages
     # ========================================================
@@ -407,7 +398,6 @@ application.add_handler(
             pattern=r"^locked:",
         )
     )
-
 
     # ========================================================
     # Subjects
@@ -441,7 +431,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Student Files
     # ========================================================
@@ -474,7 +463,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Student Summaries
     # ========================================================
@@ -500,7 +488,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Student Drawings
     # ========================================================
@@ -525,7 +512,6 @@ application.add_handler(
             pattern=r"^study_item:",
         )
     )
-
 
     # ========================================================
     # Admin Subjects
@@ -572,7 +558,6 @@ application.add_handler(
             pattern=r"^enable_subject:",
         )
     )
-
 
     # ========================================================
     # Admin Files
@@ -662,7 +647,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Admin Summaries
     # ========================================================
@@ -750,7 +734,6 @@ application.add_handler(
             pattern=r"^confirm_delete_summary:",
         )
     )
-
 
     # ========================================================
     # Admin Drawings
@@ -840,7 +823,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Admin Schedules
     # ========================================================
@@ -865,7 +847,6 @@ application.add_handler(
             pattern=r"^delete_schedule:",
         )
     )
-
 
     # ========================================================
     # Admin Grades
@@ -927,7 +908,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Admin Tools
     # ========================================================
@@ -981,7 +961,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Bundle Descriptions
     # ========================================================
@@ -1014,7 +993,6 @@ application.add_handler(
         )
     )
 
-
     # ========================================================
     # Admin Main Menu
     # ========================================================
@@ -1032,7 +1010,6 @@ application.add_handler(
             pattern=r"^admin_back$",
         )
     )
-
 
     # ========================================================
     # Run Bot
