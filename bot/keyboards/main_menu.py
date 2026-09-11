@@ -26,6 +26,12 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
+                text="🧪 الاختبارات",
+                callback_data=f"main:quizzes:{user_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🔎 البحث",
                 callback_data=f"main:search:{user_id}",
             ),
