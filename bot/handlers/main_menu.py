@@ -124,6 +124,17 @@ async def main_menu_button(
         )
         return
 
+    if section == "quizzes":
+        from bot.handlers.quizzes import (
+            show_quizzes,
+        )
+
+        await show_quizzes(
+            update,
+            context,
+        )
+        return
+
     if section == "search":
         await start_search(
             update,
