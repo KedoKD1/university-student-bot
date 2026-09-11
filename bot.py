@@ -12,16 +12,19 @@ from telegram.ext import (
 
 from bot.database.client import supabase
 
+
 from bot.handlers.main_menu import (
     show_main_menu,
     main_menu_button,
     back_main,
 )
 
+
 from bot.handlers.search import (
     start_search,
     handle_search_text,
 )
+
 
 from bot.handlers.stages import (
     locked_stage_button,
@@ -29,12 +32,14 @@ from bot.handlers.stages import (
     stage_button,
 )
 
+
 from bot.handlers.subjects import (
     back_to_stages,
     back_to_subjects,
     subject_button,
     subjects_page_button,
 )
+
 
 from bot.handlers.content import (
     back_to_content,
@@ -48,11 +53,22 @@ from bot.handlers.content import (
     study_item_button,
 )
 
+
+from bot.handlers.exam_dates import (
+    show_exam_dates,
+    exam_stage,
+    exam_type,
+    exam_locked,
+    exam_back,
+)
+
+
 from bot.handlers.admin import (
     admin_back,
     admin_button,
     admin_command,
 )
+
 
 from bot.handlers.admin_subjects import (
     admin_subjects,
@@ -63,6 +79,7 @@ from bot.handlers.admin_subjects import (
     manage_subject,
     subject_conversation_handler,
 )
+
 
 from bot.handlers.admin_files import (
     admin_files,
@@ -80,6 +97,7 @@ from bot.handlers.admin_files import (
     file_conversation_handler,
 )
 
+
 from bot.handlers.admin_summaries import (
     admin_summaries,
     admin_summary_stage,
@@ -95,6 +113,7 @@ from bot.handlers.admin_summaries import (
     confirm_delete_summary,
     summary_conversation_handler,
 )
+
 
 from bot.handlers.admin_drawings import (
     admin_drawings,
@@ -112,11 +131,13 @@ from bot.handlers.admin_drawings import (
     drawing_conversation_handler,
 )
 
+
 from bot.handlers.schedules import (
     show_schedules,
     student_schedule_stage,
     locked_schedule,
 )
+
 
 from bot.handlers.admin_schedules import (
     admin_schedules,
@@ -124,6 +145,12 @@ from bot.handlers.admin_schedules import (
     delete_schedule,
     schedule_conversation_handler,
 )
+
+
+from bot.handlers.grades import (
+    grades_callback,
+)
+
 
 from bot.handlers.admin_grades import (
     admin_grades,
@@ -137,6 +164,34 @@ from bot.handlers.admin_grades import (
     grade_conversation_handler,
 )
 
+
+from bot.handlers.admin_exam_dates import (
+    admin_exams,
+    admin_exam_stage,
+    add_exam_start,
+    add_exam_type,
+    add_exam_title,
+    add_exam_subject,
+    add_exam_date,
+    add_exam_time,
+    add_exam_notes,
+    edit_exam_start,
+    edit_exam_type,
+    edit_exam_title,
+    edit_exam_subject,
+    edit_exam_date,
+    edit_exam_time,
+    edit_exam_notes,
+    manage_exam,
+    disable_exam,
+    enable_exam,
+    delete_exam,
+    confirm_delete_exam,
+    cancel_exam,
+    exam_conversation_handler,
+)
+
+
 from bot.handlers.admin_tools import (
     admin_tools,
     bot_status,
@@ -148,6 +203,7 @@ from bot.handlers.admin_tools import (
     role_conversation_handler,
 )
 
+
 from bot.handlers.bundle_descriptions import (
     bundle_descriptions,
     choose_description_type,
@@ -156,13 +212,16 @@ from bot.handlers.bundle_descriptions import (
     bundle_description_conversation_handler,
 )
 
+
 from bot.handlers.user_tracking import (
     track_user,
 )
 
+
 from bot.utils.permission_guard import (
     permission_guard,
 )
+
 
 from bot.utils.config import (
     BOT_TOKEN,
@@ -262,6 +321,9 @@ def main():
 
     # ========================================================
     # Admin Conversations
+    # IMPORTANT:
+    # Keep all ConversationHandlers before the generic
+    # search MessageHandler.
     # ========================================================
 
     application.add_handler(
@@ -289,6 +351,10 @@ def main():
     )
 
     application.add_handler(
+        exam_conversation_handler()
+    )
+
+    application.add_handler(
         bundle_description_conversation_handler()
     )
 
@@ -298,8 +364,6 @@ def main():
 
     # ========================================================
     # Search Text
-    # IMPORTANT:
-    # This must stay AFTER all ConversationHandlers.
     # ========================================================
 
     application.add_handler(
@@ -332,6 +396,45 @@ def main():
         CallbackQueryHandler(
             locked_schedule,
             pattern=r"^locked_schedule:",
+        )
+    )
+
+    # ========================================================
+    # Student Exam Dates
+    # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_exam_dates,
+            pattern=r"^main:exams:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            exam_stage,
+            pattern=r"^exam_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            exam_type,
+            pattern=r"^exam_type:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            exam_locked,
+            pattern=r"^exam_locked:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            exam_back,
+            pattern=r"^exam_back:",
         )
     )
 
@@ -888,6 +991,59 @@ def main():
         CallbackQueryHandler(
             confirm_delete_grade,
             pattern=r"^confirm_delete_grade:",
+        )
+    )
+
+    # ========================================================
+    # Admin Exam Dates
+    # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_exams,
+            pattern=r"^admin_exams$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_exam_stage,
+            pattern=r"^admin_exam_stage:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            manage_exam,
+            pattern=r"^manage_exam:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            disable_exam,
+            pattern=r"^disable_exam:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            enable_exam,
+            pattern=r"^enable_exam:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_exam,
+            pattern=r"^delete_exam:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            confirm_delete_exam,
+            pattern=r"^confirm_delete_exam:",
         )
     )
 
