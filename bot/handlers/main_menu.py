@@ -92,6 +92,17 @@ async def main_menu_button(
         )
         return
 
+    if section == "quizzes":
+        from bot.handlers.quizzes import (
+            show_quizzes,
+        )
+
+        await show_quizzes(
+            update,
+            context,
+        )
+        return
+
     await query.answer()
 
     if section == "stages":
@@ -119,17 +130,6 @@ async def main_menu_button(
         )
 
         await show_exam_dates(
-            update,
-            context,
-        )
-        return
-
-    if section == "quizzes":
-        from bot.handlers.quizzes import (
-            show_quizzes,
-        )
-
-        await show_quizzes(
             update,
             context,
         )
@@ -207,6 +207,11 @@ async def back_main(
 
     context.user_data.pop(
         "search_owner_id",
+        None,
+    )
+
+    context.user_data.pop(
+        "quiz_state",
         None,
     )
 
