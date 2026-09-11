@@ -20,6 +20,12 @@ from bot.handlers.main_menu import (
 )
 
 
+from bot.handlers.quizzes import (
+    quiz_callback,
+    handle_quiz_text,
+)
+
+
 from bot.handlers.search import (
     start_search,
     handle_search_text,
