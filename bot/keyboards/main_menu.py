@@ -20,6 +20,12 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
+                text="📋 مواعيد الامتحانات",
+                callback_data=f"main:exams:{user_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🔎 البحث",
                 callback_data=f"main:search:{user_id}",
             ),
