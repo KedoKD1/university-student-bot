@@ -20,28 +20,73 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_ADMINS,
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     PERMISSION_MANAGE_SETTINGS,
+    DEFAULT_ROLE_PERMISSIONS,
+    get_admin,
+    get_role_permissions,
+    is_admin,
     has_permission,
 )
+
+
+# ============================================================
+# Admin permission snapshot
+# ============================================================
+
+async def get_admin_permissions(user_id: int):
+    """
+    تحميل صلاحيات الأدمن مرة واحدة فقط عند بناء لوحة الإدارة.
+
+    هذا يمنع admin_keyboard من تنفيذ استعلام Supabase
+    لكل زر بشكل منفصل.
+    """
+
+    admin = await get_admin(user_id)
+
+    if not admin:
+        return None, set()
+
+    role = admin.get("role")
+
+    if role == "owner":
+        return admin, {
+            PERMISSION_MANAGE_SUBJECTS,
+            PERMISSION_MANAGE_FILES,
+            PERMISSION_MANAGE_SUMMARIES,
+            PERMISSION_MANAGE_DRAWINGS,
+            PERMISSION_MANAGE_SCHEDULES,
+            PERMISSION_MANAGE_GRADES,
+            PERMISSION_MANAGE_DESCRIPTIONS,
+            PERMISSION_VIEW_STATISTICS,
+            PERMISSION_MANAGE_ADMINS,
+            PERMISSION_MANAGE_ANNOUNCEMENTS,
+            PERMISSION_MANAGE_SETTINGS,
+        }
+
+    permissions = set(
+        DEFAULT_ROLE_PERMISSIONS.get(
+            role,
+            set(),
+        )
+    )
+
+    database_permissions = await get_role_permissions(role)
+
+    if database_permissions:
+        permissions.update(database_permissions)
+
+    return admin, permissions
 
 
 # ============================================================
 # Admin check
 # ============================================================
 
-async def is_admin(user_id: int) -> bool:
-    response = (
-        supabase
-        .table("admins")
-        .select(
-            "id, telegram_id, role, is_active"
-        )
-        .eq("telegram_id", user_id)
-        .eq("is_active", True)
-        .limit(1)
-        .execute()
-    )
+async def is_admin_user(user_id: int) -> bool:
+    """
+    فحص الأدمن باستخدام نظام الـ cache الموحد.
+    """
 
-    return bool(response.data)
+    return await is_admin(user_id)
 
 
 # ============================================================
@@ -49,12 +94,23 @@ async def is_admin(user_id: int) -> bool:
 # ============================================================
 
 async def admin_keyboard(user_id: int):
+    """
+    بناء لوحة الإدارة باستعلامات قليلة جداً.
+
+    سابقاً كان يتم استدعاء has_permission لكل زر،
+    مما يسبب عدة عمليات قراءة من Supabase.
+
+    الآن يتم تحميل بيانات الأدمن والصلاحيات مرة واحدة.
+    """
+
+    admin, permissions = await get_admin_permissions(user_id)
+
+    if admin is None:
+        return InlineKeyboardMarkup([])
+
     keyboard = []
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_SUBJECTS,
-    ):
+    if PERMISSION_MANAGE_SUBJECTS in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📚 إدارة المواد",
@@ -62,10 +118,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_FILES,
-    ):
+    if PERMISSION_MANAGE_FILES in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📄 إدارة الملفات",
@@ -73,10 +126,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_SUMMARIES,
-    ):
+    if PERMISSION_MANAGE_SUMMARIES in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📝 إدارة الملخصات",
@@ -84,10 +134,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_DRAWINGS,
-    ):
+    if PERMISSION_MANAGE_DRAWINGS in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "🎨 إدارة الرسومات",
@@ -95,10 +142,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_SCHEDULES,
-    ):
+    if PERMISSION_MANAGE_SCHEDULES in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📅 إدارة الجداول",
@@ -106,10 +150,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_GRADES,
-    ):
+    if PERMISSION_MANAGE_GRADES in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📝 إدارة الدرجات",
@@ -118,18 +159,9 @@ async def admin_keyboard(user_id: int):
         ])
 
     has_tools = (
-        await has_permission(
-            user_id,
-            PERMISSION_VIEW_STATISTICS,
-        )
-        or await has_permission(
-            user_id,
-            PERMISSION_MANAGE_ADMINS,
-        )
-        or await has_permission(
-            user_id,
-            PERMISSION_MANAGE_DESCRIPTIONS,
-        )
+        PERMISSION_VIEW_STATISTICS in permissions
+        or PERMISSION_MANAGE_ADMINS in permissions
+        or PERMISSION_MANAGE_DESCRIPTIONS in permissions
     )
 
     if has_tools:
@@ -140,10 +172,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_ANNOUNCEMENTS,
-    ):
+    if PERMISSION_MANAGE_ANNOUNCEMENTS in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "📢 الإعلانات",
@@ -151,10 +180,7 @@ async def admin_keyboard(user_id: int):
             )
         ])
 
-    if await has_permission(
-        user_id,
-        PERMISSION_MANAGE_SETTINGS,
-    ):
+    if PERMISSION_MANAGE_SETTINGS in permissions:
         keyboard.append([
             InlineKeyboardButton(
                 "⚙️ الإعدادات",
@@ -181,7 +207,10 @@ async def admin_command(
 
     user_id = update.effective_user.id
 
-    if not await is_admin(user_id):
+    # يستخدم cache بدلاً من استعلام admins جديد كل مرة.
+    admin = await get_admin(user_id)
+
+    if admin is None:
         await update.message.reply_text(
             "⛔ عذراً، ليس لديك صلاحية "
             "الوصول إلى لوحة الإدارة."
@@ -216,7 +245,11 @@ async def admin_back(
 
     user_id = query.from_user.id
 
-    if not await is_admin(user_id):
+    # الـ cache يمنع إعادة قراءة admins من Supabase
+    # إذا كان المستخدم فُحص قبل لحظات.
+    admin = await get_admin(user_id)
+
+    if admin is None:
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -461,7 +494,11 @@ async def admin_button(
 
     user_id = query.from_user.id
 
-    if not await is_admin(user_id):
+    # استخدام cache هنا أيضاً يمنع استعلام admins
+    # في كل ضغطة على أزرار الإدارة.
+    admin = await get_admin(user_id)
+
+    if admin is None:
         await query.answer(
             "⛔ ليس لديك صلاحية للوصول "
             "إلى لوحة الإدارة.",
