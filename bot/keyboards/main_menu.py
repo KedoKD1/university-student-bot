@@ -14,30 +14,28 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
-                text="📅 الجداول",
-                callback_data=f"main:schedule:{user_id}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text="📋 مواعيد الامتحانات",
                 callback_data=f"main:exams:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🧪 الاختبارات",
-                callback_data=f"main:quizzes:{user_id}",
-            )
-        ],
-        [
+                text="📅 الجداول",
+                callback_data=f"main:schedule:{user_id}",
+            ),
             InlineKeyboardButton(
                 text="🔎 البحث",
                 callback_data=f"main:search:{user_id}",
             ),
+        ],
+        [
             InlineKeyboardButton(
                 text="📝 الدرجات",
                 callback_data=f"main:grades:{user_id}",
+            ),
+            InlineKeyboardButton(
+                text="🧪 الاختبارات",
+                callback_data=f"main:quizzes:{user_id}",
             ),
         ],
         [
