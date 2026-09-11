@@ -23,17 +23,29 @@ async def show_main_menu(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.message is None or update.effective_user is None:
+    if (
+        update.message is None
+        or update.effective_user is None
+    ):
         return
 
-    context.user_data.pop("search_mode", None)
-    context.user_data.pop("search_owner_id", None)
+    context.user_data.pop(
+        "search_mode",
+        None,
+    )
+
+    context.user_data.pop(
+        "search_owner_id",
+        None,
+    )
 
     user_id = update.effective_user.id
 
     await update.message.reply_text(
         main_menu_text(),
-        reply_markup=main_menu_keyboard(user_id),
+        reply_markup=main_menu_keyboard(
+            user_id
+        ),
     )
 
 
@@ -43,7 +55,10 @@ async def main_menu_button(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
+    if (
+        query is None
+        or query.from_user is None
+    ):
         return
 
     parts = query.data.split(":")
@@ -71,7 +86,10 @@ async def main_menu_button(
         or section.startswith("grades_")
         or section == "grade_file"
     ):
-        await grades_callback(update, context)
+        await grades_callback(
+            update,
+            context,
+        )
         return
 
     await query.answer()
@@ -85,9 +103,22 @@ async def main_menu_button(
         return
 
     if section == "schedule":
-        from bot.handlers.schedules import show_schedule_stages
+        from bot.handlers.schedules import (
+            show_schedules,
+        )
 
-        await show_schedule_stages(
+        await show_schedules(
+            update,
+            context,
+        )
+        return
+
+    if section == "exams":
+        from bot.handlers.exam_dates import (
+            show_exam_dates,
+        )
+
+        await show_exam_dates(
             update,
             context,
         )
@@ -134,7 +165,10 @@ async def back_main(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
+    if (
+        query is None
+        or query.from_user is None
+    ):
         return
 
     parts = query.data.split(":")
@@ -155,8 +189,15 @@ async def back_main(
         )
         return
 
-    context.user_data.pop("search_mode", None)
-    context.user_data.pop("search_owner_id", None)
+    context.user_data.pop(
+        "search_mode",
+        None,
+    )
+
+    context.user_data.pop(
+        "search_owner_id",
+        None,
+    )
 
     await query.answer()
 
