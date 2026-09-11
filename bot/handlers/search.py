@@ -142,6 +142,24 @@ async def handle_search_text(
     if update.effective_user is None:
         return False
 
+    # ========================================================
+    # Quiz text answers
+    # ========================================================
+
+    from bot.handlers.quizzes import handle_quiz_text
+
+    quiz_handled = await handle_quiz_text(
+        update,
+        context,
+    )
+
+    if quiz_handled:
+        return True
+
+    # ========================================================
+    # Search
+    # ========================================================
+
     if not context.user_data.get("search_mode"):
         return False
 
