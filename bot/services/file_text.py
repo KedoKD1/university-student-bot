@@ -1,69 +1,120 @@
-from io import BytesIO
+from __future__ import annotations
+
+import io
+import re
+from typing import Optional
+
+from telegram import Bot
+
+from pypdf import PdfReader
+from docx import Document
+from pptx import Presentation
 
 
 def clean_text(text: str) -> str:
+    """
+    تنظيف النص المستخرج من الملفات.
+    """
+
     if not text:
         return ""
 
-    lines = []
+    text = text.replace("\x00", " ")
 
-    for line in text.splitlines():
-        line = " ".join(line.split())
+    # توحيد الأسطر
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
 
-        if line:
-            lines.append(line)
+    # إزالة المسافات الزائدة
+    text = re.sub(r"[ \t]+", " ", text)
 
-    return "\n".join(lines).strip()
+    # إزالة الأسطر الفارغة المتكررة
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
 def extract_pdf(data: bytes) -> str:
-    from pypdf import PdfReader
+    """
+    استخراج النص من PDF.
+    """
 
-    reader = PdfReader(BytesIO(data))
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:
+        raise ValueError("تعذر فتح ملف PDF.") from exc
 
     pages = []
 
-    for page in reader.pages:
+    for index, page in enumerate(reader.pages, start=1):
         try:
             text = page.extract_text() or ""
         except Exception:
             text = ""
 
-        if text:
-            pages.append(text)
+        text = clean_text(text)
 
-    return clean_text("\n".join(pages))
+        if text:
+            pages.append(
+                f"--- الصفحة {index} ---\n{text}"
+            )
+
+    return clean_text("\n\n".join(pages))
 
 
 def extract_docx(data: bytes) -> str:
-    from docx import Document
+    """
+    استخراج النص من Word DOCX.
+    """
 
-    document = Document(BytesIO(data))
+    try:
+        document = Document(io.BytesIO(data))
+    except Exception as exc:
+        raise ValueError("تعذر فتح ملف Word.") from exc
 
-    paragraphs = []
+    parts = []
 
+    # الفقرات
     for paragraph in document.paragraphs:
-        if paragraph.text:
-            paragraphs.append(paragraph.text)
+        text = clean_text(paragraph.text)
 
+        if text:
+            parts.append(text)
+
+    # الجداول
     for table in document.tables:
+        rows = []
+
         for row in table.rows:
-            values = []
+            cells = []
 
             for cell in row.cells:
-                if cell.text:
-                    values.append(cell.text)
+                text = clean_text(cell.text)
 
-            if values:
-                paragraphs.append(" | ".join(values))
+                if text:
+                    cells.append(text)
 
-    return clean_text("\n".join(paragraphs))
+            if cells:
+                rows.append(" | ".join(cells))
+
+        if rows:
+            parts.append(
+                "--- جدول ---\n"
+                + "\n".join(rows)
+            )
+
+    return clean_text("\n\n".join(parts))
 
 
 def extract_pptx(data: bytes) -> str:
-    from pptx import Presentation
+    """
+    استخراج النص من PowerPoint.
+    """
 
-    presentation = Presentation(BytesIO(data))
+    try:
+        presentation = Presentation(io.BytesIO(data))
+    except Exception as exc:
+        raise ValueError("تعذر فتح ملف PowerPoint.") from exc
 
     slides = []
 
@@ -71,108 +122,161 @@ def extract_pptx(data: bytes) -> str:
         presentation.slides,
         start=1,
     ):
-        slide_text = [
-            f"[الشريحة {slide_number}]"
-        ]
+        slide_parts = []
 
         for shape in slide.shapes:
-            if hasattr(shape, "text"):
-                text = shape.text.strip()
+            if not hasattr(shape, "text"):
+                continue
 
-                if text:
-                    slide_text.append(text)
+            try:
+                text = clean_text(shape.text)
+            except Exception:
+                text = ""
 
-        if len(slide_text) > 1:
-            slides.append("\n".join(slide_text))
+            if text:
+                slide_parts.append(text)
 
-    return clean_text("\n".join(slides))
+        if slide_parts:
+            slides.append(
+                f"--- الشريحة {slide_number} ---\n"
+                + "\n".join(slide_parts)
+            )
+
+    return clean_text("\n\n".join(slides))
 
 
-def extract_plain_text(
-    data: bytes,
-) -> str:
-    encodings = (
+def extract_plain_text(data: bytes) -> str:
+    """
+    استخراج النص من الملفات النصية العادية.
+    """
+
+    encodings = [
         "utf-8",
-        "utf-16",
+        "utf-8-sig",
         "cp1256",
         "latin-1",
-    )
+    ]
 
     for encoding in encodings:
         try:
-            return clean_text(
-                data.decode(encoding)
-            )
-        except Exception:
+            text = data.decode(encoding)
+
+            if text.strip():
+                return clean_text(text)
+
+        except UnicodeDecodeError:
             continue
 
-    return ""
+    raise ValueError(
+        "تعذر قراءة محتوى الملف النصي."
+    )
 
 
 def extract_text_from_bytes(
     data: bytes,
-    file_type: str | None,
-    file_name: str | None = None,
+    file_type: Optional[str] = None,
+    file_name: Optional[str] = None,
 ) -> str:
-    file_type = str(
-        file_type or ""
-    ).lower().strip()
+    """
+    تحديد نوع الملف واستخراج النص منه.
+    """
 
-    file_name = str(
-        file_name or ""
-    ).lower().strip()
+    normalized_type = (
+        (file_type or "")
+        .strip()
+        .lower()
+    )
+
+    normalized_name = (
+        (file_name or "")
+        .strip()
+        .lower()
+    )
 
     if (
-        file_type == "pdf"
-        or file_name.endswith(".pdf")
+        normalized_type == "pdf"
+        or normalized_name.endswith(".pdf")
+        or normalized_name.endswith(".PDF".lower())
     ):
         return extract_pdf(data)
 
     if (
-        file_type in {
+        normalized_type in {
             "docx",
             "word",
-            "document",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         }
-        or file_name.endswith(".docx")
+        or normalized_name.endswith(".docx")
     ):
         return extract_docx(data)
 
     if (
-        file_type in {
+        normalized_type in {
             "pptx",
             "powerpoint",
-            "presentation",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         }
-        or file_name.endswith(".pptx")
+        or normalized_name.endswith(".pptx")
     ):
         return extract_pptx(data)
 
-    if (
-        file_type in {
-            "txt",
-            "text",
-            "md",
-            "markdown",
-            "csv",
-        }
-        or file_name.endswith(
-            (".txt", ".md", ".csv")
-        )
-    ):
+    if normalized_type in {
+        "txt",
+        "text",
+        "text/plain",
+    } or normalized_name.endswith(".txt"):
         return extract_plain_text(data)
+
+    # محاولة تلقائية حسب محتوى الملف
+    if data.startswith(b"%PDF"):
+        return extract_pdf(data)
+
+    # DOCX و PPTX عبارة عن ZIP
+    if data.startswith(b"PK"):
+        try:
+            return extract_docx(data)
+        except Exception:
+            pass
+
+        try:
+            return extract_pptx(data)
+        except Exception:
+            pass
 
     return extract_plain_text(data)
 
 
 async def download_telegram_file(
-    bot,
+    bot: Bot,
     telegram_file_id: str,
 ) -> bytes:
-    telegram_file = await bot.get_file(
-        telegram_file_id
-    )
+    """
+    تحميل ملف من Telegram باستخدام file_id.
+    """
 
-    data = await telegram_file.download_as_bytearray()
+    if not telegram_file_id:
+        raise ValueError(
+            "معرّف ملف Telegram غير موجود."
+        )
 
-    return bytes(data)
+    try:
+        telegram_file = await bot.get_file(
+            telegram_file_id
+        )
+    except Exception as exc:
+        raise ValueError(
+            "تعذر الوصول إلى الملف الموجود في Telegram."
+        ) from exc
+
+    buffer = io.BytesIO()
+
+    try:
+        await telegram_file.download_to_memory(
+            buffer
+        )
+    except Exception as exc:
+        raise ValueError(
+            "تعذر تحميل الملف من Telegram."
+        ) from exc
+
+    return buffer.getvalue()
