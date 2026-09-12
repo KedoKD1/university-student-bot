@@ -1,3 +1,7 @@
 python-telegram-bot
 supabase
 python-dotenv
+openai
+pypdf
+python-docx
+python-pptx
