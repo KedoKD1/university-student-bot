@@ -31,9 +31,6 @@ def _get_model() -> str:
 
 
 def _clean_json_text(text: str) -> str:
-    """
-    Cleans common markdown wrapping around JSON.
-    """
     text = text.strip()
 
     if text.startswith("```"):
@@ -53,9 +50,6 @@ def _clean_json_text(text: str) -> str:
 
 
 def _parse_response(text: str) -> dict[str, Any]:
-    """
-    Parse AI JSON response safely.
-    """
     if not text:
         raise AIQuizError(
             "❌ الذكاء الاصطناعي لم يرجع نتيجة صالحة."
@@ -125,9 +119,10 @@ def _validate_question(
     if not isinstance(options, dict):
         return None
 
-    # -------------------------
-    # True / False
-    # -------------------------
+    # ========================================================
+    # TRUE / FALSE
+    # ========================================================
+
     if question_type == "true_false":
 
         required_keys = {"true", "false"}
@@ -135,7 +130,9 @@ def _validate_question(
         if set(options.keys()) != required_keys:
             return None
 
-        answer = _normalize_text(correct_answer).lower()
+        answer = _normalize_text(
+            correct_answer
+        ).lower()
 
         if answer not in {"true", "false"}:
             return None
@@ -144,40 +141,42 @@ def _validate_question(
             "question_type": "true_false",
             "question_text": question_text,
             "options": {
-                "true": "صح",
-                "false": "خطأ",
+                "true": "True",
+                "false": "False",
             },
             "correct_answer": answer,
             "explanation": explanation,
             "difficulty": difficulty,
         }
 
-    # -------------------------
-    # Multiple Choice
-    # -------------------------
+    # ========================================================
+    # MULTIPLE CHOICE
+    # ========================================================
+
     if question_type == "multiple_choice":
 
-        if len(options) != 4:
-            return None
+        required_keys = {"A", "B", "C", "D"}
 
-        option_keys = list(options.keys())
-
-        if len(set(option_keys)) != 4:
+        if set(options.keys()) != required_keys:
             return None
 
         cleaned_options = {}
 
-        for key in option_keys:
-            value = _normalize_text(options.get(key))
+        for key in ["A", "B", "C", "D"]:
+            value = _normalize_text(
+                options.get(key)
+            )
 
             if not value:
                 return None
 
-            cleaned_options[str(key)] = value
+            cleaned_options[key] = value
 
-        answer = _normalize_text(correct_answer)
+        answer = _normalize_text(
+            correct_answer
+        ).upper()
 
-        if answer not in cleaned_options:
+        if answer not in required_keys:
             return None
 
         return {
@@ -189,9 +188,10 @@ def _validate_question(
             "difficulty": difficulty,
         }
 
-    # -------------------------
-    # Enumeration
-    # -------------------------
+    # ========================================================
+    # ENUMERATION
+    # ========================================================
+
     if question_type == "enumeration":
 
         if not isinstance(correct_answer, list):
@@ -235,7 +235,6 @@ def _validate_questions(
         )
 
     result = []
-
     seen = set()
 
     for raw_question in raw_questions:
@@ -281,33 +280,40 @@ def _build_prompt(
 ) -> str:
 
     if question_type == "true_false":
-        type_rules = """
-نوع الأسئلة: صح / خطأ.
 
-كل سؤال يجب أن يحتوي على:
-- options = {"true": "صح", "false": "خطأ"}
-- correct_answer = "true" أو "false"
+        type_rules = """
+Question type: True / False.
+
+Each question MUST contain:
+
+- options = {"true": "True", "false": "False"}
+- correct_answer = "true" OR "false"
 """
 
     elif question_type == "multiple_choice":
-        type_rules = """
-نوع الأسئلة: اختيار من متعدد.
 
-كل سؤال يجب أن يحتوي على:
-- 4 خيارات بالضبط.
-- مفاتيح الخيارات تكون A و B و C و D.
-- correct_answer يجب أن يكون واحداً من A أو B أو C أو D.
+        type_rules = """
+Question type: Multiple Choice.
+
+Each question MUST contain:
+
+- Exactly 4 options.
+- Option keys MUST be A, B, C, D.
+- correct_answer MUST be exactly one of A, B, C, or D.
 """
 
     elif question_type == "enumeration":
+
         type_rules = """
-نوع الأسئلة: تعداد.
+Question type: Enumeration.
 
-السؤال يجب أن يطلب من الطالب تعداد عناصر أو نقاط
-موجودة بشكل واضح داخل المادة.
+The question must ask the student to list
+items, elements, steps, components, classifications,
+or points that are explicitly present in the source material.
 
-correct_answer يجب أن يكون قائمة تحتوي على جميع الإجابات الصحيحة،
-وبحد أدنى عنصرين.
+correct_answer MUST be a list containing all correct answers.
+
+There must be at least 2 correct answers.
 """
 
     else:
@@ -316,49 +322,115 @@ correct_answer يجب أن يكون قائمة تحتوي على جميع الإ
         )
 
     return f"""
-أنت مولّد اختبارات أكاديمية لمنصة LabBase التعليمية
-الخاصة بطلاب تقنيات المختبرات الطبية.
+You are an academic quiz generator for LabBase,
+an educational platform for Medical Laboratory Techniques students.
 
-مهمتك إنشاء أسئلة اختبار اعتماداً على المادة المصدرية
-الموجودة في نهاية هذا الطلب فقط.
+Your task is to generate quiz questions ONLY from the source
+material provided at the end of this prompt.
 
-قواعد صارمة جداً:
+============================================================
+STRICT SOURCE RULES
+============================================================
 
-1. استخدم المعلومات الموجودة في المادة فقط.
-2. ممنوع إضافة معلومات من خارج المادة.
-3. ممنوع التخمين.
-4. ممنوع اختراع معلومات غير موجودة.
-5. إذا كانت المعلومة غير واضحة في المادة، لا تستخدمها.
-6. الأسئلة يجب أن تكون أكاديمية وواضحة ومناسبة للطلاب.
-7. لا تجعل السؤال يعتمد على معلومات خارج النص.
-8. لا تكرر الأسئلة.
-9. لا تجعل أكثر من إجابة صحيحة في سؤال الاختيار من متعدد.
-10. يجب أن تكون الإجابة الصحيحة قابلة للإثبات من المادة.
-11. لا تضع أي Markdown خارج JSON.
-12. أرجع JSON فقط.
-13. لغة السؤال والإجابة تكون عربية واضحة، مع إبقاء المصطلحات الطبية
-    الإنجليزية كما تظهر في المادة عندما تكون مهمة.
-14. مستوى الصعوبة المطلوب: {difficulty}.
-15. عدد الأسئلة المطلوب: {count}.
+1. Use ONLY information explicitly found in the source material.
+
+2. DO NOT use outside knowledge.
+
+3. DO NOT guess.
+
+4. DO NOT invent facts.
+
+5. If information is unclear, incomplete, or ambiguous,
+   DO NOT use it.
+
+6. Every correct answer MUST be directly supported by the source.
+
+7. Questions must be academically useful and clear.
+
+8. Do not create duplicate questions.
+
+9. For multiple choice questions, there MUST be exactly one
+   correct answer.
+
+10. Do not create misleading answers based on information
+    that does not exist in the source.
+
+============================================================
+LANGUAGE RULE — VERY IMPORTANT
+============================================================
+
+ALL quiz content MUST be written in ENGLISH.
+
+This includes:
+
+- question_text
+- multiple-choice options
+- correct_answer
+- explanation
+
+DO NOT translate the source material into Arabic.
+
+Use the English terminology exactly as it appears in the
+source material whenever possible.
+
+Medical terminology must remain in English.
+
+If the source contains English medical terms,
+preserve them accurately.
+
+The quiz interface itself may remain Arabic,
+but the actual questions and answers MUST be English.
+
+============================================================
+DIFFICULTY
+============================================================
+
+Required difficulty:
+{difficulty}
+
+============================================================
+QUESTION COUNT
+============================================================
+
+Generate exactly:
+{count}
+
+questions.
+
+============================================================
+QUESTION TYPE
+============================================================
 
 {type_rules}
 
-صيغة JSON المطلوبة:
+============================================================
+OUTPUT FORMAT
+============================================================
+
+Return ONLY valid JSON.
+
+Do NOT use Markdown.
+
+Do NOT add explanations outside the JSON.
+
+Required JSON structure:
 
 {{
   "questions": [
     {{
       "question_type": "{question_type}",
-      "question_text": "نص السؤال",
+      "question_text": "Question in English",
       "options": {{}},
-      "correct_answer": "الإجابة",
-      "explanation": "شرح مختصر مستند إلى المادة",
+      "correct_answer": "Correct answer",
+      "explanation": "Short explanation in English based only on the source",
       "difficulty": "{difficulty}"
     }}
   ]
 }}
 
-المادة المصدرية:
+============================================================
+SOURCE MATERIAL
+============================================================
 
 ---------------- BEGIN SOURCE ----------------
 
@@ -394,7 +466,9 @@ def _generate_sync(
             model=model,
             input=prompt,
         )
+
     except Exception as exc:
+
         raise AIQuizError(
             "❌ حدث خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي.\n"
             "حاول مرة أخرى لاحقاً."
@@ -411,7 +485,9 @@ def _generate_sync(
             "❌ الذكاء الاصطناعي لم يرجع نتيجة."
         )
 
-    data = _parse_response(output_text)
+    data = _parse_response(
+        output_text
+    )
 
     return _validate_questions(
         data=data,
