@@ -1350,7 +1350,7 @@ async def start_quiz(
                 source_text=source_text,
                 question_type=question_type,
                 difficulty=difficulty,
-                question_count=question_count,
+                count=question_count,
             )
         )
 
