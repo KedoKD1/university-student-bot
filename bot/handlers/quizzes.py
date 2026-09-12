@@ -64,10 +64,7 @@ def normalize(value):
 
 
 def parse_json(value):
-    if isinstance(
-        value,
-        (dict, list, bool, int, float),
-    ):
+    if isinstance(value, (dict, list, bool, int, float)):
         return value
 
     if value is None:
@@ -80,9 +77,7 @@ def parse_json(value):
 
 
 def get_options(question):
-    options = parse_json(
-        question.get("options")
-    )
+    options = parse_json(question.get("options"))
 
     if isinstance(options, dict):
         return list(options.items())
@@ -97,40 +92,45 @@ def get_options(question):
 
 
 def get_correct_answer(question):
-    return parse_json(
-        question.get("correct_answer")
-    )
+    return parse_json(question.get("correct_answer"))
 
 
-def answer_is_correct(
-    question,
-    answer,
-):
+def format_correct_answer(question):
+    correct = get_correct_answer(question)
+
+    if isinstance(correct, list):
+        return ", ".join(
+            str(value)
+            for value in correct
+        )
+
+    if isinstance(correct, dict):
+        return ", ".join(
+            f"{key}: {value}"
+            for key, value in correct.items()
+        )
+
+    return str(correct or "")
+
+
+def answer_is_correct(question, answer):
     """
-    Compare the student's answer against the stored
-    correct answer in a reliable way.
+    Reliable answer comparison.
 
-    True/False:
-        callback sends true/false
-        database stores true/false
+    True / False:
+        true / false
 
     Multiple Choice:
-        callback sends A/B/C/D
-        database stores A/B/C/D
+        A / B / C / D
 
     Enumeration:
-        student's text is compared against all required
-        answers from the AI.
+        student's answer must contain all required answers.
     """
 
-    question_type = question.get(
-        "question_type"
-    )
+    question_type = question.get("question_type")
 
     answer = parse_json(answer)
-    correct_answer = get_correct_answer(
-        question
-    )
+    correct_answer = get_correct_answer(question)
 
     # ========================================================
     # True / False
@@ -138,20 +138,15 @@ def answer_is_correct(
 
     if question_type == "true_false":
 
-        student_answer = normalize(
-            answer
-        )
+        student_answer = normalize(answer)
+        correct = normalize(correct_answer)
 
-        correct = normalize(
-            correct_answer
-        )
-
-        # Support both English and old Arabic values.
         aliases = {
             "true": "true",
             "صح": "true",
             "false": "false",
             "خطأ": "false",
+            "خطا": "false",
         }
 
         student_answer = aliases.get(
@@ -166,10 +161,7 @@ def answer_is_correct(
 
         return (
             student_answer == correct
-            and correct in {
-                "true",
-                "false",
-            }
+            and correct in {"true", "false"}
         )
 
     # ========================================================
@@ -178,21 +170,8 @@ def answer_is_correct(
 
     if question_type == "multiple_choice":
 
-        student_answer = normalize(
-            answer
-        )
-
-        correct = normalize(
-            correct_answer
-        )
-
-        # The callback sends the option key:
-        # A / B / C / D
-        #
-        # The database also stores:
-        # A / B / C / D
-        #
-        # Therefore compare the keys directly.
+        student_answer = normalize(answer)
+        correct = normalize(correct_answer)
 
         return (
             student_answer == correct
@@ -224,15 +203,10 @@ def answer_is_correct(
             if normalize(value)
         }
 
-        if isinstance(
-            correct_answer,
-            list,
-        ):
+        if isinstance(correct_answer, list):
             correct_values = correct_answer
         else:
-            correct_values = [
-                correct_answer
-            ]
+            correct_values = [correct_answer]
 
         correct_values = {
             normalize(value)
@@ -248,6 +222,24 @@ def answer_is_correct(
         )
 
     return False
+
+
+def build_feedback_text(
+    question,
+    correct,
+):
+    correct_answer = format_correct_answer(question)
+
+    if correct:
+        return (
+            "✅ Correct!\n\n"
+            "Your answer is correct."
+        )
+
+    return (
+        "❌ Incorrect!\n\n"
+        f"Correct answer: {correct_answer}"
+    )
 
 
 # ============================================================
@@ -282,6 +274,36 @@ def quizzes_keyboard(user_id):
                 "🏠 القائمة الرئيسية",
                 callback_data=(
                     f"back_main:{user_id}"
+                ),
+            )
+        ],
+    ])
+
+
+def next_question_keyboard(
+    quiz_id,
+    question_index,
+    owner_id,
+):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "➡️ السؤال التالي",
+                callback_data=(
+                    f"quiz:next:"
+                    f"{quiz_id}:"
+                    f"{question_index}:"
+                    f"{owner_id}"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🏠 إنهاء الاختبار",
+                callback_data=(
+                    f"quiz:cancel:"
+                    f"{quiz_id}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -417,10 +439,12 @@ async def show_quiz_stages(
     keyboard = []
 
     for stage in stages:
+
         stage_id = stage["id"]
         stage_number = stage["stage_number"]
 
         if stage.get("is_active"):
+
             keyboard.append([
                 InlineKeyboardButton(
                     f"📚 المرحلة {stage_number}",
@@ -431,7 +455,9 @@ async def show_quiz_stages(
                     ),
                 )
             ])
+
         else:
+
             keyboard.append([
                 InlineKeyboardButton(
                     f"🔒 المرحلة {stage_number}",
@@ -526,10 +552,12 @@ async def show_quiz_subjects(
     keyboard = []
 
     for subject in subjects:
+
         subject_id = subject["id"]
         name = subject["name"]
 
         if subject.get("is_active"):
+
             keyboard.append([
                 InlineKeyboardButton(
                     f"📘 {name}",
@@ -541,7 +569,9 @@ async def show_quiz_subjects(
                     ),
                 )
             ])
+
         else:
+
             keyboard.append([
                 InlineKeyboardButton(
                     f"🔒 {name}",
@@ -749,23 +779,24 @@ async def show_quiz_files(
         )
         return
 
-    keyboard = []
-
-    keyboard.append([
-        InlineKeyboardButton(
-            "📚 اختبار شامل من كل الملفات",
-            callback_data=(
-                f"quiz:source:"
-                f"{stage_id}:"
-                f"{subject_id}:"
-                f"{section}:"
-                f"all:"
-                f"{owner_id}"
-            ),
-        )
-    ])
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "📚 اختبار شامل من كل الملفات",
+                callback_data=(
+                    f"quiz:source:"
+                    f"{stage_id}:"
+                    f"{subject_id}:"
+                    f"{section}:"
+                    f"all:"
+                    f"{owner_id}"
+                ),
+            )
+        ]
+    ]
 
     for file in files:
+
         file_id = file["id"]
 
         file_name = (
@@ -862,9 +893,7 @@ async def show_quiz_source(
         )
         return
 
-    context.user_data[
-        "quiz_setup"
-    ] = {
+    context.user_data["quiz_setup"] = {
         "stage_id": int(stage_id),
         "subject_id": int(subject_id),
         "section": section,
@@ -875,6 +904,7 @@ async def show_quiz_source(
     keyboard = []
 
     for quiz_type, title in QUIZ_TYPES.items():
+
         keyboard.append([
             InlineKeyboardButton(
                 title,
@@ -972,6 +1002,7 @@ async def show_quiz_types(
     keyboard = []
 
     for difficulty, title in DIFFICULTIES.items():
+
         keyboard.append([
             InlineKeyboardButton(
                 title,
@@ -1066,6 +1097,7 @@ async def show_quiz_counts(
     keyboard = []
 
     for count in QUESTION_COUNTS:
+
         keyboard.append([
             InlineKeyboardButton(
                 f"📝 {count} أسئلة",
@@ -1171,6 +1203,7 @@ async def load_quiz_source_files(
     loaded = []
 
     for file in files:
+
         telegram_file_id = file.get(
             "telegram_file_id"
         )
@@ -1179,6 +1212,7 @@ async def load_quiz_source_files(
             continue
 
         try:
+
             data = await download_telegram_file(
                 telegram_bot,
                 telegram_file_id,
@@ -1209,6 +1243,7 @@ async def load_quiz_source_files(
             })
 
         except Exception as exc:
+
             print(
                 "QUIZ FILE LOAD ERROR:",
                 file.get("id"),
@@ -1219,15 +1254,15 @@ async def load_quiz_source_files(
     return loaded
 
 
-def build_source_text(
-    loaded_files,
-):
+def build_source_text(loaded_files):
+
     sections = []
 
     for index, file in enumerate(
         loaded_files,
         start=1,
     ):
+
         sections.append(
             "==================================================\n"
             f"SOURCE FILE {index}\n"
@@ -1282,8 +1317,7 @@ async def start_quiz(
         return
 
     # ========================================================
-    # IMPORTANT:
-    # Prevent double-click / duplicate generation.
+    # HARD GENERATION LOCK
     # ========================================================
 
     generating_key = (
@@ -1299,36 +1333,57 @@ async def start_quiz(
         )
         return
 
-    # Mark as generating BEFORE doing any slow operation.
+    if context.user_data.get(
+        f"quiz_active:{owner_id}"
+    ):
+        await query.answer(
+            "⚠️ لديك اختبار قيد التنفيذ حالياً.",
+            show_alert=True,
+        )
+        return
+
+    # Lock BEFORE ANY slow operation.
     context.user_data[
         generating_key
     ] = True
 
+    # ========================================================
+    # IMPORTANT FIX:
+    # Immediately replace the buttons.
+    #
+    # This makes it impossible for the student
+    # to press the generation button again.
+    # ========================================================
+
+    await query.answer(
+        "🤖 جاري إنشاء الاختبار..."
+    )
+
     try:
 
         if question_count not in QUESTION_COUNTS:
-            await query.answer(
-                "❌ عدد الأسئلة غير صالح.",
-                show_alert=True,
+            raise ValueError(
+                "Invalid question count"
             )
-            return
 
         if question_type not in QUIZ_TYPES:
-            await query.answer(
-                "❌ نوع الأسئلة غير صالح.",
-                show_alert=True,
+            raise ValueError(
+                "Invalid question type"
             )
-            return
 
         if difficulty not in DIFFICULTIES:
-            await query.answer(
-                "❌ مستوى الصعوبة غير صالح.",
-                show_alert=True,
+            raise ValueError(
+                "Invalid difficulty"
             )
-            return
 
-        await query.answer(
-            "🤖 جاري إعداد الاختبار بالذكاء الاصطناعي..."
+        # ----------------------------------------------------
+        # Immediately remove generation buttons.
+        # ----------------------------------------------------
+
+        await query.edit_message_text(
+            "🤖 جاري إنشاء الاختبار...\n\n"
+            "⏳ يتم الآن قراءة الملفات وتحضير الأسئلة.\n"
+            "لا تحتاج تضغط أي شيء، انتظر فقط..."
         )
 
         # ----------------------------------------------------
@@ -1359,6 +1414,7 @@ async def start_quiz(
         )
 
         if not loaded_files:
+
             await query.edit_message_text(
                 "❌ ما گدرت ألقى محتوى قابل للقراءة "
                 "ضمن الملفات المحددة.\n\n"
@@ -1387,6 +1443,7 @@ async def start_quiz(
                     ],
                 ]),
             )
+
             return
 
         # ----------------------------------------------------
@@ -1398,7 +1455,7 @@ async def start_quiz(
         )
 
         # ----------------------------------------------------
-        # Generate questions
+        # Generate questions ONCE
         # ----------------------------------------------------
 
         generated_questions = (
@@ -1413,6 +1470,17 @@ async def start_quiz(
         if not generated_questions:
             raise AIQuizError(
                 "لم يتم إنشاء أسئلة."
+            )
+
+        # Make sure exactly requested amount is used.
+        generated_questions = (
+            generated_questions[:question_count]
+        )
+
+        if len(generated_questions) != question_count:
+            raise AIQuizError(
+                "الذكاء الاصطناعي لم يُرجع العدد المطلوب "
+                "من الأسئلة."
             )
 
         # ----------------------------------------------------
@@ -1460,8 +1528,11 @@ async def start_quiz(
         ):
 
             if source != "all":
+
                 file_id = loaded_files[0]["id"]
+
             else:
+
                 file_id = loaded_files[
                     index % len(loaded_files)
                 ]["id"]
@@ -1539,7 +1610,13 @@ async def start_quiz(
             "score": 0.0,
             "total_score": total_score,
             "user_id": str(owner_id),
+            "answer_lock": False,
+            "waiting_next": False,
         }
+
+        context.user_data[
+            f"quiz_active:{owner_id}"
+        ] = True
 
         context.user_data.pop(
             "quiz_setup",
@@ -1547,7 +1624,7 @@ async def start_quiz(
         )
 
         # ----------------------------------------------------
-        # Send first question
+        # Show FIRST question exactly once.
         # ----------------------------------------------------
 
         await send_current_question(
@@ -1648,7 +1725,6 @@ async def start_quiz(
 
     finally:
 
-        # Allow a new quiz after this generation finishes.
         context.user_data.pop(
             generating_key,
             None,
@@ -1656,7 +1732,7 @@ async def start_quiz(
 
 
 # ============================================================
-# Build question keyboard
+# Question keyboard
 # ============================================================
 
 def build_question_keyboard(
@@ -1707,6 +1783,7 @@ def build_question_keyboard(
         for key, value in get_options(
             question
         ):
+
             keyboard.append([
                 InlineKeyboardButton(
                     str(value),
@@ -1722,10 +1799,6 @@ def build_question_keyboard(
 
     elif question_type == "enumeration":
 
-        context_key = (
-            f"quiz_waiting:{quiz_id}"
-        )
-
         keyboard = [
             [
                 InlineKeyboardButton(
@@ -1739,7 +1812,9 @@ def build_question_keyboard(
             ]
         ]
 
-        return keyboard
+        return InlineKeyboardMarkup(
+            keyboard
+        )
 
     keyboard.append([
         InlineKeyboardButton(
@@ -1752,7 +1827,9 @@ def build_question_keyboard(
         )
     ])
 
-    return keyboard
+    return InlineKeyboardMarkup(
+        keyboard
+    )
 
 
 # ============================================================
@@ -1769,23 +1846,27 @@ async def send_current_question(
     )
 
     if not state:
+
         await query.edit_message_text(
             "❌ انتهت جلسة الاختبار.",
             reply_markup=main_keyboard(
                 query.from_user.id
             ),
         )
+
         return
 
     index = state["index"]
     questions = state["questions"]
 
     if index >= len(questions):
+
         await finish_quiz(
             query.message,
             context,
             state,
         )
+
         return
 
     question = questions[index]
@@ -1804,6 +1885,7 @@ async def send_current_question(
     )
 
     if question_type == "enumeration":
+
         text += (
             "\n\n"
             "✍️ Write your answer in English.\n"
@@ -1815,10 +1897,13 @@ async def send_current_question(
         ] = True
 
     else:
+
         context.user_data.pop(
             f"quiz_waiting:{quiz_id}",
             None,
         )
+
+    state["waiting_next"] = False
 
     keyboard = build_question_keyboard(
         state,
@@ -1827,9 +1912,7 @@ async def send_current_question(
 
     await query.edit_message_text(
         text,
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        ),
+        reply_markup=keyboard,
     )
 
 
@@ -1888,19 +1971,135 @@ async def quiz_answer(
         )
         return
 
-    question = state["questions"][
-        question_index
-    ]
+    # --------------------------------------------------------
+    # Prevent double-click answer.
+    # --------------------------------------------------------
+
+    if state.get("answer_lock"):
+        await query.answer(
+            "⏳ تم تسجيل إجابتك.",
+            show_alert=True,
+        )
+        return
+
+    if state.get("waiting_next"):
+        await query.answer(
+            "➡️ اضغط السؤال التالي.",
+            show_alert=True,
+        )
+        return
+
+    state["answer_lock"] = True
+
+    try:
+
+        question = state["questions"][
+            question_index
+        ]
+
+        correct = answer_is_correct(
+            question,
+            answer,
+        )
+
+        await query.answer()
+
+        await save_answer(
+            query.message,
+            context,
+            state,
+            question,
+            question_index,
+            answer,
+            correct=correct,
+        )
+
+    except Exception as exc:
+
+        print(
+            "QUIZ ANSWER ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        state["answer_lock"] = False
+
+        await query.answer(
+            "❌ حدث خطأ أثناء تسجيل الإجابة.",
+            show_alert=True,
+        )
+
+
+# ============================================================
+# Next question callback
+# ============================================================
+
+async def quiz_next(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 5:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    quiz_id = int(parts[2])
+    previous_index = int(parts[3])
+    owner_id = parts[4]
+
+    if not check_owner(
+        query,
+        owner_id,
+    ):
+        await query.answer(
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    state = context.user_data.get(
+        f"quiz:{quiz_id}"
+    )
+
+    if not state:
+        await query.answer(
+            "❌ انتهت جلسة الاختبار.",
+            show_alert=True,
+        )
+        return
+
+    if state["index"] != previous_index:
+        await query.answer(
+            "⚠️ هذا السؤال لم يعد فعالاً.",
+            show_alert=True,
+        )
+        return
+
+    if not state.get("waiting_next"):
+        await query.answer(
+            "⚠️ لا يوجد سؤال بانتظار الانتقال.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
-    await save_answer(
-        query.message,
+    state["waiting_next"] = False
+    state["answer_lock"] = False
+
+    await send_current_question(
+        query,
         context,
-        state,
-        question,
-        question_index,
-        answer,
+        quiz_id,
     )
 
 
@@ -1949,12 +2148,20 @@ async def handle_quiz_text(
         ):
             continue
 
+        if state.get("answer_lock"):
+            return True
+
+        if state.get("waiting_next"):
+            return True
+
         answer = (
             update.message.text or ""
         ).strip()
 
         if not answer:
             return True
+
+        state["answer_lock"] = True
 
         context.user_data.pop(
             waiting_key,
@@ -1967,14 +2174,37 @@ async def handle_quiz_text(
             question_index
         ]
 
-        await save_answer(
-            update.message,
-            context,
-            state,
-            question,
-            question_index,
-            answer,
-        )
+        try:
+
+            correct = answer_is_correct(
+                question,
+                answer,
+            )
+
+            await save_answer(
+                update.message,
+                context,
+                state,
+                question,
+                question_index,
+                answer,
+                correct=correct,
+            )
+
+        except Exception as exc:
+
+            print(
+                "QUIZ TEXT ANSWER ERROR:",
+                type(exc).__name__,
+                exc,
+            )
+
+            state["answer_lock"] = False
+
+            await update.message.reply_text(
+                "❌ حدث خطأ أثناء تسجيل الإجابة.\n"
+                "حاول إرسال إجابتك مرة ثانية."
+            )
 
         return True
 
@@ -1982,7 +2212,7 @@ async def handle_quiz_text(
 
 
 # ============================================================
-# Save answer
+# Save answer + feedback
 # ============================================================
 
 async def save_answer(
@@ -1992,18 +2222,20 @@ async def save_answer(
     question,
     question_index,
     answer,
+    correct=None,
 ):
     # --------------------------------------------------------
-    # Prevent duplicate answer submission
+    # Prevent stale / duplicate answer.
     # --------------------------------------------------------
 
     if state["index"] != question_index:
         return
 
-    correct = answer_is_correct(
-        question,
-        answer,
-    )
+    if correct is None:
+        correct = answer_is_correct(
+            question,
+            answer,
+        )
 
     points = float(
         question.get("points") or 1
@@ -2015,9 +2247,20 @@ async def save_answer(
         else 0.0
     )
 
+    # Update score immediately.
     state["score"] += earned_points
 
+    # Move state to waiting-for-next.
+    state["index"] += 1
+    state["waiting_next"] = True
+    state["answer_lock"] = False
+
+    # --------------------------------------------------------
+    # Save answer in database.
+    # --------------------------------------------------------
+
     try:
+
         (
             supabase
             .table("quiz_answers")
@@ -2039,79 +2282,46 @@ async def save_answer(
         )
 
     except Exception as exc:
+
         print(
             "QUIZ ANSWER SAVE ERROR:",
             type(exc).__name__,
             exc,
         )
 
-        # Do not stop the local quiz if the answer
-        # was already processed.
-        pass
+    # --------------------------------------------------------
+    # If this was the final question.
+    # --------------------------------------------------------
 
-    state["index"] += 1
-
-    if (
-        state["index"]
-        >= len(state["questions"])
+    if state["index"] >= len(
+        state["questions"]
     ):
+
         await finish_quiz(
             message,
             context,
             state,
         )
+
         return
 
-    next_question = state[
-        "questions"
-    ][state["index"]]
+    # --------------------------------------------------------
+    # Feedback.
+    # --------------------------------------------------------
 
-    question_number = (
-        state["index"] + 1
+    feedback = build_feedback_text(
+        question,
+        correct,
     )
 
-    total_questions = len(
-        state["questions"]
-    )
-
-    text = (
-        f"🧪 Question {question_number} "
-        f"of {total_questions}\n\n"
-        f"{next_question.get('question_text', '')}"
-    )
-
-    next_type = next_question.get(
-        "question_type"
-    )
-
-    if next_type == "enumeration":
-
-        context.user_data[
-            f"quiz_waiting:{state['quiz_id']}"
-        ] = True
-
-        text += (
-            "\n\n"
-            "✍️ Write your answer in English.\n"
-            "You can separate the items with commas."
-        )
-
-    else:
-
-        context.user_data.pop(
-            f"quiz_waiting:{state['quiz_id']}",
-            None,
-        )
-
-    keyboard = build_question_keyboard(
-        state,
-        next_question,
-    )
+    next_index = state["index"]
 
     await message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
+        feedback,
+        reply_markup=next_question_keyboard(
+            state["quiz_id"],
+            next_index,
+            state["user_id"],
         ),
     )
 
@@ -2140,6 +2350,7 @@ async def finish_quiz(
     )
 
     try:
+
         (
             supabase
             .table("quizzes")
@@ -2155,6 +2366,7 @@ async def finish_quiz(
         )
 
     except Exception as exc:
+
         print(
             "QUIZ RESULT SAVE ERROR:",
             type(exc).__name__,
@@ -2162,20 +2374,24 @@ async def finish_quiz(
         )
 
     if percentage >= 90:
+
         result_icon = "🏆"
         result_text = "ممتاز جداً!"
 
     elif percentage >= 75:
+
         result_icon = "🎉"
         result_text = "نتيجة ممتازة!"
 
     elif percentage >= 50:
+
         result_icon = "👍"
         result_text = (
             "جيد، استمر بالمراجعة!"
         )
 
     else:
+
         result_icon = "📚"
         result_text = (
             "راجع المادة وحاول مرة ثانية."
@@ -2191,6 +2407,8 @@ async def finish_quiz(
         "💾 تم حفظ محاولة الاختبار."
     )
 
+    owner_id = state["user_id"]
+
     await message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup([
@@ -2199,7 +2417,7 @@ async def finish_quiz(
                     "🧪 اختبار جديد",
                     callback_data=(
                         f"main:quizzes:"
-                        f"{state['user_id']}"
+                        f"{owner_id}"
                     ),
                 )
             ],
@@ -2208,20 +2426,32 @@ async def finish_quiz(
                     "🏠 القائمة الرئيسية",
                     callback_data=(
                         f"back_main:"
-                        f"{state['user_id']}"
+                        f"{owner_id}"
                     ),
                 )
             ],
         ]),
     )
 
+    quiz_id = state["quiz_id"]
+
     context.user_data.pop(
-        f"quiz:{state['quiz_id']}",
+        f"quiz:{quiz_id}",
         None,
     )
 
     context.user_data.pop(
-        f"quiz_waiting:{state['quiz_id']}",
+        f"quiz_waiting:{quiz_id}",
+        None,
+    )
+
+    context.user_data.pop(
+        f"quiz_active:{owner_id}",
+        None,
+    )
+
+    context.user_data.pop(
+        f"quiz_generating:{owner_id}",
         None,
     )
 
@@ -2273,6 +2503,11 @@ async def cancel_quiz(
 
     context.user_data.pop(
         f"quiz_generating:{owner_id}",
+        None,
+    )
+
+    context.user_data.pop(
+        f"quiz_active:{owner_id}",
         None,
     )
 
@@ -2419,6 +2654,7 @@ async def quiz_callback(
         "count": show_quiz_counts,
         "start": start_quiz,
         "answer": quiz_answer,
+        "next": quiz_next,
         "cancel": cancel_quiz,
         "locked": quiz_locked,
         "subject_locked": quiz_subject_locked,
