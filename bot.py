@@ -26,6 +26,11 @@ from bot.handlers.quizzes import (
 )
 
 
+from bot.handlers.leaderboard import (
+    leaderboard_callback,
+)
+
+
 from bot.handlers.search import (
     start_search,
     handle_search_text,
