@@ -248,6 +248,18 @@ async def search_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
+# ========================================================
+# Leaderboard
+# ========================================================
+
+application.add_handler(
+    CallbackQueryHandler(
+        leaderboard_callback,
+        pattern=r"^leaderboard:",
+    )
+)
+
     # --------------------------------------------------------
     # Quiz text answers
     # --------------------------------------------------------
