@@ -42,6 +42,9 @@ SECTIONS = {
 
 QUESTION_COUNTS = (1, 5, 10)
 
+# Used to turn list-based options into A/B/C/D... keys.
+OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 
 # ============================================================
 # Helpers
@@ -156,6 +159,18 @@ def parse_json(value):
 
 
 def get_options(question):
+    """
+    Return a list of (key, text) tuples for a question's options.
+
+    FIX: when options are stored as a JSON list (e.g. from the AI
+    generator), we used to key them by their numeric list index
+    ("0", "1", "2", "3"). That produced callback_data and displayed
+    labels like "0. answer text" instead of "A. answer text", and
+    broke answer matching in resolve_mcq_key/answer_is_correct since
+    correct_answer values use letters (A/B/C/D). We now always map
+    list options to A/B/C/D... letters, same as dict-based options.
+    """
+
     options = parse_json(
         question.get("options")
     )
@@ -172,7 +187,9 @@ def get_options(question):
     if isinstance(options, list):
         return [
             (
-                str(index),
+                OPTION_LETTERS[index]
+                if index < len(OPTION_LETTERS)
+                else str(index),
                 str(value),
             )
             for index, value in enumerate(options)
