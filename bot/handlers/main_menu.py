@@ -12,8 +12,8 @@ from bot.handlers.grades import grades_callback
 
 def main_menu_text():
 return (
-“🏠 القائمة الرئيسية\n\n”
-“أهلاً بك في LabBase.\n”
+"🏠 القائمة الرئيسية\n\n"
+"أهلاً بك في LabBase.\n”
 “اختر القسم الذي تريد الوصول إليه:”
 )
 
