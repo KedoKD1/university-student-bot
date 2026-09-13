@@ -20,6 +20,7 @@ from bot.services.ai_quiz import (
 
 from bot.handlers.leaderboard import (
     award_quiz_points,
+    show_leaderboard,
 )
 
 
