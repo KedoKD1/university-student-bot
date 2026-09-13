@@ -19,6 +19,13 @@ from bot.services.ai_quiz import (
 )
 
 
+from bot.handlers.leaderboard import (
+    award_quiz_points,
+    calculate_quiz_base_points,
+    DAILY_POINT_LIMIT,
+)
+
+
 QUIZ_TYPES = {
     "true_false": "☑️ صح / خطأ",
     "multiple_choice": "🔘 اختيار من متعدد",
