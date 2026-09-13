@@ -555,7 +555,6 @@ def build_feedback_text(
     correct,
 ):
     if correct:
-
         return (
             "✅ Correct!\n\n"
             "Your answer is correct."
@@ -565,10 +564,26 @@ def build_feedback_text(
         question
     )
 
-    return (
+    explanation = str(
+        question.get("explanation")
+        or ""
+    ).strip()
+
+    text = (
         "❌ Incorrect!\n\n"
-        f"Correct answer: {correct_answer}"
+        f"✅ Correct answer: "
+        f"{correct_answer}"
     )
+
+    if explanation:
+        text += (
+            "\n\n"
+            "💡 Why?\n"
+            f"{explanation}"
+        )
+
+    return text
+
 
 
 # ============================================================
