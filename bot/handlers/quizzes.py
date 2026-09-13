@@ -18,11 +18,8 @@ from bot.services.ai_quiz import (
     generate_questions,
 )
 
-
 from bot.handlers.leaderboard import (
     award_quiz_points,
-    calculate_quiz_base_points,
-    DAILY_POINT_LIMIT,
 )
 
 
@@ -70,8 +67,8 @@ def normalize(value):
 
     Keeps English content intact while removing:
     - extra spaces
-    - surrounding punctuation
     - case differences
+    - invisible characters
     """
 
     if value is None:
@@ -98,6 +95,7 @@ def normalize_key(value):
         A)
         (A)
         option A
+
     all become:
         a
     """
@@ -123,9 +121,6 @@ def normalize_key(value):
     )
 
     value = value.strip()
-
-    if value in {"a", "b", "c", "d"}:
-        return value
 
     return value
 
@@ -217,12 +212,15 @@ def extract_correct_scalar(value):
         )
 
         for key in preferred_keys:
+
             if key in value:
+
                 return extract_correct_scalar(
                     value[key]
                 )
 
         if len(value) == 1:
+
             only_value = next(
                 iter(value.values())
             )
@@ -236,6 +234,7 @@ def extract_correct_scalar(value):
     if isinstance(value, list):
 
         if len(value) == 1:
+
             return extract_correct_scalar(
                 value[0]
             )
@@ -248,6 +247,109 @@ def extract_correct_scalar(value):
 def format_correct_answer(question):
     correct = get_correct_answer(question)
 
+    question_type = question.get(
+        "question_type"
+    )
+
+    # ========================================================
+    # Multiple choice
+    # ========================================================
+
+    if question_type == "multiple_choice":
+
+        scalar = extract_correct_scalar(
+            correct
+        )
+
+        key = normalize_key(
+            scalar
+        )
+
+        if key:
+
+            for option_key, option_value in get_options(
+                question
+            ):
+
+                normalized_option_key = normalize_key(
+                    option_key
+                )
+
+                if normalized_option_key == key:
+
+                    return (
+                        f"{option_key.upper()}. "
+                        f"{option_value}"
+                    )
+
+        if scalar not in (
+            None,
+            "",
+        ):
+            return str(scalar)
+
+    # ========================================================
+    # True / False
+    # ========================================================
+
+    if question_type == "true_false":
+
+        scalar = extract_correct_scalar(
+            correct
+        )
+
+        if scalar is True:
+            return "True"
+
+        if scalar is False:
+            return "False"
+
+        normalized = normalize_true_false(
+            scalar
+        )
+
+        if normalized == "true":
+            return "True"
+
+        if normalized == "false":
+            return "False"
+
+        return str(
+            scalar or ""
+        )
+
+    # ========================================================
+    # Enumeration
+    # ========================================================
+
+    if question_type == "enumeration":
+
+        if isinstance(correct, list):
+
+            return ", ".join(
+                str(value)
+                for value in correct
+            )
+
+        if isinstance(correct, dict):
+
+            values = list(
+                correct.values()
+            )
+
+            return ", ".join(
+                str(value)
+                for value in values
+            )
+
+        return str(
+            correct or ""
+        )
+
+    # ========================================================
+    # Generic
+    # ========================================================
+
     if isinstance(correct, dict):
 
         scalar = extract_correct_scalar(
@@ -258,27 +360,6 @@ def format_correct_answer(question):
             None,
             "",
         ):
-            # For MCQ, convert key to the
-            # actual option text.
-            if question.get(
-                "question_type"
-            ) == "multiple_choice":
-
-                key = normalize_key(
-                    scalar
-                )
-
-                for option_key, option_value in get_options(
-                    question
-                ):
-                    if normalize_key(
-                        option_key
-                    ) == key:
-                        return (
-                            f"{option_key.upper()}: "
-                            f"{option_value}"
-                        )
-
             return str(scalar)
 
         return ", ".join(
@@ -287,6 +368,7 @@ def format_correct_answer(question):
         )
 
     if isinstance(correct, list):
+
         return ", ".join(
             str(value)
             for value in correct
@@ -298,7 +380,9 @@ def format_correct_answer(question):
     if correct is False:
         return "False"
 
-    return str(correct or "")
+    return str(
+        correct or ""
+    )
 
 
 def normalize_true_false(value):
@@ -345,6 +429,7 @@ def resolve_mcq_key(
     value = parse_json(value)
 
     if isinstance(value, dict):
+
         value = extract_correct_scalar(
             value
         )
@@ -352,8 +437,11 @@ def resolve_mcq_key(
     if isinstance(value, list):
 
         if len(value) == 1:
+
             value = value[0]
+
         else:
+
             return ""
 
     normalized_value = normalize_key(
@@ -366,10 +454,12 @@ def resolve_mcq_key(
         "c",
         "d",
     }:
+
         return normalized_value
 
-    # If AI/database stores the actual
-    # option text instead of its key.
+    # If AI/database stores actual
+    # option text instead of key.
+
     normalized_text = normalize(
         value
     )
@@ -381,7 +471,10 @@ def resolve_mcq_key(
         if normalized_text == normalize(
             option_text
         ):
-            return normalize_key(key)
+
+            return normalize_key(
+                key
+            )
 
     return normalized_value
 
@@ -415,23 +508,23 @@ def split_enumeration_answer(value):
 
     for item in values:
 
-        item = str(item or "").strip()
+        item = str(
+            item or ""
+        ).strip()
 
         if not item:
             continue
 
-        # Remove common list numbering:
-        # 1.
-        # 2)
-        # -
-        # •
+        # Remove common numbering.
         item = re.sub(
             r"^\s*(?:\d+[\.\)]|[-•*])\s*",
             "",
             item,
         )
 
-        item = normalize(item)
+        item = normalize(
+            item
+        )
 
         if item:
             result.add(item)
@@ -447,14 +540,15 @@ def answer_is_correct(
     Reliable answer comparison.
 
     True / False:
-        Normalized semantic comparison.
+        Semantic normalized comparison.
 
     Multiple Choice:
-        Compare the actual A/B/C/D key.
-        Also accepts the option text itself.
+        Compare A/B/C/D keys.
+        Also accepts option text.
 
     Enumeration:
-        Compare normalized required items.
+        All required correct items must
+        be present in student's answer.
     """
 
     question_type = question.get(
@@ -483,6 +577,10 @@ def answer_is_correct(
 
         return (
             student in {
+                "true",
+                "false",
+            }
+            and correct in {
                 "true",
                 "false",
             }
@@ -542,7 +640,6 @@ def answer_is_correct(
         if not correct_values:
             return False
 
-        # Require all correct items.
         return correct_values.issubset(
             student_values
         )
@@ -554,7 +651,20 @@ def build_feedback_text(
     question,
     correct,
 ):
+    """
+    Build feedback after every answer.
+
+    If correct:
+        Show success.
+
+    If incorrect:
+        Show:
+        - correct answer
+        - explanation / reason
+    """
+
     if correct:
+
         return (
             "✅ Correct!\n\n"
             "Your answer is correct."
@@ -576,14 +686,22 @@ def build_feedback_text(
     )
 
     if explanation:
+
         text += (
             "\n\n"
             "💡 Why?\n"
             f"{explanation}"
         )
 
-    return text
+    else:
 
+        text += (
+            "\n\n"
+            "💡 No explanation was provided "
+            "for this question."
+        )
+
+    return text
 
 
 # ============================================================
@@ -1707,6 +1825,10 @@ async def start_quiz(
         f"quiz_generating:{owner_id}"
     )
 
+    active_key = (
+        f"quiz_active:{owner_id}"
+    )
+
     if context.user_data.get(
         generating_key
     ):
@@ -1719,7 +1841,7 @@ async def start_quiz(
         return
 
     if context.user_data.get(
-        f"quiz_active:{owner_id}"
+        active_key
     ):
 
         await query.answer(
@@ -1963,12 +2085,14 @@ async def start_quiz(
             "score": 0.0,
             "total_score": total_score,
             "user_id": str(owner_id),
+            "database_user_id": user_id,
             "answer_lock": False,
             "waiting_next": False,
+            "points_awarded": False,
         }
 
         context.user_data[
-            f"quiz_active:{owner_id}"
+            active_key
         ] = True
 
         context.user_data.pop(
@@ -2625,8 +2749,6 @@ async def save_answer(
 
     # ========================================================
     # Save answer FIRST.
-    #
-    # The database is now the source of truth.
     # ========================================================
 
     try:
@@ -2661,8 +2783,6 @@ async def save_answer(
             exc,
         )
 
-        # Do NOT advance the question if
-        # the answer could not be recorded.
         state["answer_lock"] = False
 
         await message.reply_text(
@@ -2673,8 +2793,7 @@ async def save_answer(
         return
 
     # ========================================================
-    # Only after successful database save,
-    # update runtime state.
+    # Update runtime score.
     # ========================================================
 
     state["score"] += earned_points
@@ -2696,10 +2815,8 @@ async def save_answer(
 
     # ========================================================
     # Final question:
-    #
-    # Show feedback FIRST.
-    # Then calculate the final result
-    # from database records.
+    # Show feedback first.
+    # Then calculate final result.
     # ========================================================
 
     if state["index"] >= len(
@@ -2719,7 +2836,7 @@ async def save_answer(
         return
 
     # ========================================================
-    # Normal question
+    # Normal question.
     # ========================================================
 
     next_index = state["index"]
@@ -2748,6 +2865,7 @@ async def calculate_quiz_result(
         score
         total_score
         percentage
+        correct_count
     """
 
     answers_result = (
@@ -2768,12 +2886,15 @@ async def calculate_quiz_result(
     )
 
     score = 0.0
+    correct_count = 0
 
     for answer in answers:
 
         if answer.get(
             "is_correct"
         ):
+
+            correct_count += 1
 
             score += float(
                 answer.get("points") or 0
@@ -2814,14 +2935,17 @@ async def calculate_quiz_result(
         )
 
         if stored_total > 0:
+
             total_score = stored_total
 
         elif question_count > 0:
+
             total_score = float(
                 question_count
             )
 
         else:
+
             total_score = float(
                 len(answers)
             )
@@ -2842,6 +2966,7 @@ async def calculate_quiz_result(
         score,
         total_score,
         percentage,
+        correct_count,
     )
 
 
@@ -2855,15 +2980,7 @@ async def finish_quiz(
     state,
 ):
     quiz_id = state["quiz_id"]
-
-
-awarded_points = award_quiz_points(
-    user_id=int(state["user_id"]),
-    quiz_id=state["quiz_id"],
-    difficulty=state["difficulty"],
-    question_count=len(state["questions"]),
-)
-
+    owner_id = state["user_id"]
 
     # ========================================================
     # IMPORTANT:
@@ -2876,6 +2993,7 @@ awarded_points = award_quiz_points(
             score,
             total_score,
             percentage,
+            correct_count,
         ) = await calculate_quiz_result(
             quiz_id
         )
@@ -2888,14 +3006,16 @@ awarded_points = award_quiz_points(
             exc,
         )
 
-        # Fallback only if database calculation
-        # itself fails.
         score = float(
             state.get("score") or 0
         )
 
         total_score = float(
             state.get("total_score") or 0
+        )
+
+        correct_count = int(
+            round(score)
         )
 
         percentage = (
@@ -2933,7 +3053,107 @@ awarded_points = award_quiz_points(
         )
 
     # ========================================================
-    # Result message
+    # Leaderboard points
+    #
+    # Points are based on correct answers.
+    #
+    # Difficulty:
+    # Easy   = 1 point / correct
+    # Medium = 2 points / correct
+    # Hard   = 3 points / correct
+    #
+    # Question count bonus is handled by
+    # award_quiz_points().
+    #
+    # Daily limit is also handled there.
+    # ========================================================
+
+    awarded_points = 0
+
+    try:
+
+        if not state.get(
+            "points_awarded"
+        ):
+
+            # Never award points for a quiz
+            # with zero correct answers.
+
+            if correct_count > 0:
+
+                awarded_points = (
+                    award_quiz_points(
+                        user_id=int(
+                            state.get(
+                                "database_user_id"
+                            )
+                            or 0
+                        ),
+                        quiz_id=quiz_id,
+                        difficulty=state[
+                            "difficulty"
+                        ],
+                        question_count=len(
+                            state["questions"]
+                        ),
+                        correct_count=correct_count,
+                    )
+                )
+
+            state[
+                "points_awarded"
+            ] = True
+
+    except TypeError:
+
+        # Compatibility fallback if the currently
+        # installed leaderboard handler still uses
+        # the older function signature.
+
+        try:
+
+            if correct_count > 0:
+
+                awarded_points = (
+                    award_quiz_points(
+                        user_id=int(
+                            state.get(
+                                "database_user_id"
+                            )
+                            or 0
+                        ),
+                        quiz_id=quiz_id,
+                        difficulty=state[
+                            "difficulty"
+                        ],
+                        question_count=len(
+                            state["questions"]
+                        ),
+                    )
+                )
+
+            state[
+                "points_awarded"
+            ] = True
+
+        except Exception as exc:
+
+            print(
+                "LEADERBOARD AWARD ERROR:",
+                type(exc).__name__,
+                exc,
+            )
+
+    except Exception as exc:
+
+        print(
+            "LEADERBOARD AWARD ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+    # ========================================================
+    # Result text
     # ========================================================
 
     if percentage >= 90:
@@ -2965,12 +3185,30 @@ awarded_points = award_quiz_points(
         f"📊 النتيجة: "
         f"{score:g} / {total_score:g}\n"
         f"📈 النسبة: "
-        f"{percentage:.1f}%\n\n"
+        f"{percentage:.1f}%\n"
+        f"✅ الإجابات الصحيحة: "
+        f"{correct_count} / "
+        f"{len(state['questions'])}\n\n"
         f"{result_text}\n\n"
-        "💾 تم حفظ محاولة الاختبار."
     )
 
-    owner_id = state["user_id"]
+    if awarded_points > 0:
+
+        text += (
+            f"🏆 نقاط المتصدرين المكتسبة: "
+            f"+{int(awarded_points)}\n\n"
+        )
+
+    else:
+
+        text += (
+            "🏆 نقاط المتصدرين المكتسبة: "
+            "+0\n\n"
+        )
+
+    text += (
+        "💾 تم حفظ محاولة الاختبار."
+    )
 
     await message.reply_text(
         text,
@@ -2980,6 +3218,15 @@ awarded_points = award_quiz_points(
                     "🧪 اختبار جديد",
                     callback_data=(
                         f"main:quizzes:"
+                        f"{owner_id}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🏆 المتصدرين",
+                    callback_data=(
+                        f"main:leaderboard:"
                         f"{owner_id}"
                     ),
                 )
