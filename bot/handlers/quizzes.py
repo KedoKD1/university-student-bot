@@ -2856,6 +2856,15 @@ async def finish_quiz(
 ):
     quiz_id = state["quiz_id"]
 
+
+awarded_points = award_quiz_points(
+    user_id=int(state["user_id"]),
+    quiz_id=state["quiz_id"],
+    difficulty=state["difficulty"],
+    question_count=len(state["questions"]),
+)
+
+
     # ========================================================
     # IMPORTANT:
     # Calculate everything from Supabase.
