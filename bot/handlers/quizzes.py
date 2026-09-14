@@ -3099,21 +3099,20 @@ async def finish_quiz(
 
     try:
         if not state.get("points_awarded"):
-            if correct_count > 0:
-                award_result = await award_quiz_points(
-                    telegram_id=int(owner_id),
-                    user_id=int(
-                        state.get("database_user_id")
-                        or 0
-                    ),
-                    quiz_id=quiz_id,
-                    difficulty=state["difficulty"],
-                    question_count=len(
-                        state["questions"]
-                    ),
-                    correct_count=correct_count,
-                )
+    database_user_id = state.get(
+        "database_user_id"
+    )
 
+    award_result = await award_quiz_points(
+        telegram_id=int(owner_id),
+        user_id=database_user_id,
+        quiz_id=quiz_id,
+        difficulty=state["difficulty"],
+        question_count=len(
+            state["questions"]
+        ),
+        correct_count=correct_count,
+    )
                 if isinstance(
                     award_result,
                     dict,
