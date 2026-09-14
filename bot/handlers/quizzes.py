@@ -3103,7 +3103,7 @@ async def finish_quiz(
 
             if correct_count > 0:
 
-                award_result = award_quiz_points(
+                award_result = await award_quiz_points(
                     user_id=int(
                         state.get(
                             "database_user_id"
