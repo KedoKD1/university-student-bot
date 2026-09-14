@@ -5,6 +5,7 @@ from telegram import (
     InlineKeyboardMarkup,
     Update,
 )
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
@@ -749,12 +750,15 @@ async def award_quiz_points(
 
     payload = {
         "user_id": int(internal_user_id),
-        "quiz_id": int(quiz_id),
         "points": int(awarded_points),
-        "reason": (
-            f"quiz:{difficulty}:{question_count}:{correct_count}"
-        ),
+        "reason": reason,
     }
+
+    if quiz_id is not None:
+        try:
+            payload["quiz_id"] = int(quiz_id)
+        except (TypeError, ValueError):
+            pass
 
     print(
         "POINTS INSERT ATTEMPT:",
@@ -992,13 +996,16 @@ async def show_leaderboard(
             str(exc),
         )
 
-        await query.edit_message_text(
-            "🏆 لوحة المتصدرين\n\n"
-            "❌ تعذر تحميل لوحة المتصدرين حالياً.",
-            reply_markup=leaderboard_keyboard(
-                user_id
-            ),
-        )
+        try:
+            await query.edit_message_text(
+                "🏆 لوحة المتصدرين\n\n"
+                "❌ تعذر تحميل لوحة المتصدرين حالياً.",
+                reply_markup=leaderboard_keyboard(
+                    user_id
+                ),
+            )
+        except BadRequest:
+            pass
 
         return
 
@@ -1272,12 +1279,18 @@ async def show_leaderboard(
             ),
         ])
 
-    await query.edit_message_text(
-        "\n".join(lines),
-        reply_markup=leaderboard_keyboard(
-            user_id
-        ),
-    )
+    try:
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=leaderboard_keyboard(
+                user_id
+            ),
+        )
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            pass
+        else:
+            raise exc
 
 
 # ============================================================
