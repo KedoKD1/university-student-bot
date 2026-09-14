@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from telegram import (
     InlineKeyboardButton,
@@ -48,7 +48,7 @@ def get_user_display_name(user_data):
     1. username
     2. first_name + last_name
     3. first_name
-    4. معرف Telegram
+    4. Telegram ID
     """
 
     if not user_data:
@@ -106,7 +106,10 @@ async def get_internal_user_id(telegram_id):
             supabase
             .table("users")
             .select("id")
-            .eq("telegram_id", telegram_id)
+            .eq(
+                "telegram_id",
+                telegram_id,
+            )
             .limit(1)
             .execute()
         )
@@ -124,6 +127,7 @@ async def get_internal_user_id(telegram_id):
             type(exc).__name__,
             exc,
         )
+
         return None
 
 
@@ -133,11 +137,7 @@ async def get_internal_user_id(telegram_id):
 
 async def get_user_display_data(telegram_ids):
     """
-    جلب أحدث بيانات المستخدمين من telegram_users.
-
-    telegram_users يحتوي آخر username / first_name
-    حتى إذا المستخدم غيّر الـ username يبقى leaderboard
-    يعرض البيانات الحالية.
+    جلب أحدث بيانات المستخدمين.
     """
 
     if not telegram_ids:
@@ -146,15 +146,24 @@ async def get_user_display_data(telegram_ids):
     clean_ids = []
 
     for telegram_id in telegram_ids:
+
         if telegram_id is None:
             continue
 
         try:
-            clean_ids.append(int(telegram_id))
-        except (TypeError, ValueError):
+            clean_ids.append(
+                int(telegram_id)
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
             continue
 
-    clean_ids = list(dict.fromkeys(clean_ids))
+    clean_ids = list(
+        dict.fromkeys(clean_ids)
+    )
 
     if not clean_ids:
         return {}
@@ -162,10 +171,11 @@ async def get_user_display_data(telegram_ids):
     result = {}
 
     # --------------------------------------------------------
-    # Primary source: telegram_users
+    # Primary source
     # --------------------------------------------------------
 
     try:
+
         response = (
             supabase
             .table("telegram_users")
@@ -173,26 +183,39 @@ async def get_user_display_data(telegram_ids):
                 "telegram_id, username, "
                 "first_name, last_name"
             )
-            .in_("telegram_id", clean_ids)
+            .in_(
+                "telegram_id",
+                clean_ids,
+            )
             .execute()
         )
 
         rows = response.data or []
 
         for row in rows:
-            telegram_id = row.get("telegram_id")
+
+            telegram_id = row.get(
+                "telegram_id"
+            )
 
             if telegram_id is None:
                 continue
 
             try:
-                telegram_id = int(telegram_id)
-            except (TypeError, ValueError):
+                telegram_id = int(
+                    telegram_id
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
                 continue
 
             result[telegram_id] = row
 
     except Exception as exc:
+
         print(
             "TELEGRAM USERS DISPLAY ERROR:",
             type(exc).__name__,
@@ -200,7 +223,7 @@ async def get_user_display_data(telegram_ids):
         )
 
     # --------------------------------------------------------
-    # Fallback: users
+    # Fallback
     # --------------------------------------------------------
 
     missing_ids = [
@@ -210,7 +233,9 @@ async def get_user_display_data(telegram_ids):
     ]
 
     if missing_ids:
+
         try:
+
             response = (
                 supabase
                 .table("users")
@@ -218,26 +243,39 @@ async def get_user_display_data(telegram_ids):
                     "telegram_id, username, "
                     "first_name, last_name"
                 )
-                .in_("telegram_id", missing_ids)
+                .in_(
+                    "telegram_id",
+                    missing_ids,
+                )
                 .execute()
             )
 
             rows = response.data or []
 
             for row in rows:
-                telegram_id = row.get("telegram_id")
+
+                telegram_id = row.get(
+                    "telegram_id"
+                )
 
                 if telegram_id is None:
                     continue
 
                 try:
-                    telegram_id = int(telegram_id)
-                except (TypeError, ValueError):
+                    telegram_id = int(
+                        telegram_id
+                    )
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
                     continue
 
                 result[telegram_id] = row
 
         except Exception as exc:
+
             print(
                 "USERS DISPLAY FALLBACK ERROR:",
                 type(exc).__name__,
@@ -248,27 +286,105 @@ async def get_user_display_data(telegram_ids):
 
 
 # ============================================================
-# Daily points
+# Daily time
 # ============================================================
 
 def get_today_start():
-    now = datetime.now(timezone.utc)
+    """
+    بداية اليوم بتوقيت العراق UTC+3،
+    ثم تحويلها إلى UTC حتى تتوافق مع PostgreSQL timestamptz.
+    """
 
-    return now.replace(
+    iraq_offset = timedelta(
+        hours=3
+    )
+
+    now_iraq = (
+        datetime.now(timezone.utc)
+        + iraq_offset
+    )
+
+    start_iraq = now_iraq.replace(
         hour=0,
         minute=0,
         second=0,
         microsecond=0,
+    )
+
+    start_utc = (
+        start_iraq
+        - iraq_offset
+    )
+
+    return start_utc.replace(
+        tzinfo=timezone.utc
     ).isoformat()
 
+
+# ============================================================
+# Quiz points calculation
+# ============================================================
 
 def get_points_for_quiz(
     difficulty,
     question_count,
+    correct_count=None,
 ):
-    difficulty_points = DIFFICULTY_POINTS.get(
-        difficulty,
+    """
+    حساب نقاط الاختبار.
+
+    Easy   = 1 نقطة لكل إجابة صحيحة
+    Medium = 2 نقاط لكل إجابة صحيحة
+    Hard   = 3 نقاط لكل إجابة صحيحة
+
+    Bonus:
+    1 سؤال  = +0
+    5 أسئلة = +2
+    10 أسئلة = +5
+
+    إذا correct_count غير موجود،
+    يتم اعتبار جميع الأسئلة صحيحة
+    للتوافق مع الاستدعاءات القديمة.
+    """
+
+    try:
+        question_count = int(
+            question_count
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        question_count = 0
+
+    try:
+        if correct_count is None:
+            correct_count = question_count
+        else:
+            correct_count = int(
+                correct_count
+            )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        correct_count = 0
+
+    correct_count = max(
+        min(
+            correct_count,
+            question_count,
+        ),
         0,
+    )
+
+    difficulty_points = (
+        DIFFICULTY_POINTS.get(
+            difficulty,
+            0,
+        )
     )
 
     count_bonus = COUNT_BONUS.get(
@@ -276,8 +392,13 @@ def get_points_for_quiz(
         0,
     )
 
+    # لا توجد نقاط إذا لم تكن هناك إجابة صحيحة.
+    if correct_count <= 0:
+        return 0
+
     return (
-        difficulty_points * question_count
+        difficulty_points
+        * correct_count
         + count_bonus
     )
 
@@ -287,42 +408,64 @@ def get_points_for_quiz(
 # ============================================================
 
 async def award_quiz_points(
-    telegram_id,
-    difficulty,
-    question_count,
+    telegram_id=None,
+    difficulty=None,
+    question_count=None,
+    user_id=None,
+    quiz_id=None,
+    correct_count=None,
 ):
     """
     إضافة نقاط للطالب بعد إنهاء الاختبار.
 
-    النظام:
-    Easy   = 1 نقطة لكل سؤال
-    Medium = 2 نقاط لكل سؤال
-    Hard   = 3 نقاط لكل سؤال
+    تدعم الدالة الاستدعاء الحالي الموجود
+    داخل quizzes.py:
 
-    Bonus:
-    1 سؤال  = +0
-    5 أسئلة = +2
-    10 أسئلة = +5
+        user_id
+        quiz_id
+        difficulty
+        question_count
+        correct_count
 
-    الحد اليومي = 100 نقطة.
+    كما تدعم الاستدعاء القديم:
+
+        telegram_id
+        difficulty
+        question_count
     """
 
+    # --------------------------------------------------------
+    # Normalize question count
+    # --------------------------------------------------------
+
     try:
-        question_count = int(question_count)
-    except (TypeError, ValueError):
+        question_count = int(
+            question_count
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         question_count = 0
 
-    if question_count not in COUNT_BONUS:
+    if question_count <= 0:
         return {
             "awarded_points": 0,
             "requested_points": 0,
             "daily_points": 0,
+            "remaining_points": DAILY_POINT_LIMIT,
             "daily_limit": DAILY_POINT_LIMIT,
         }
 
+    # --------------------------------------------------------
+    # Calculate requested points
+    # --------------------------------------------------------
+
     requested_points = get_points_for_quiz(
-        difficulty,
-        question_count,
+        difficulty=difficulty,
+        question_count=question_count,
+        correct_count=correct_count,
     )
 
     if requested_points <= 0:
@@ -330,14 +473,54 @@ async def award_quiz_points(
             "awarded_points": 0,
             "requested_points": 0,
             "daily_points": 0,
+            "remaining_points": DAILY_POINT_LIMIT,
             "daily_limit": DAILY_POINT_LIMIT,
         }
 
-    internal_user_id = await get_internal_user_id(
-        telegram_id
-    )
+    # --------------------------------------------------------
+    # Resolve internal user ID
+    # --------------------------------------------------------
+
+    internal_user_id = None
+
+    # Current quizzes.py already sends database_user_id
+    if user_id is not None:
+
+        try:
+            internal_user_id = int(
+                user_id
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            internal_user_id = None
+
+    # Fallback: resolve from Telegram ID
+    if internal_user_id is None:
+
+        if telegram_id is None:
+            print(
+                "POINTS ERROR: no user identifier."
+            )
+
+            return {
+                "awarded_points": 0,
+                "requested_points": requested_points,
+                "daily_points": 0,
+                "remaining_points": DAILY_POINT_LIMIT,
+                "daily_limit": DAILY_POINT_LIMIT,
+            }
+
+        internal_user_id = (
+            await get_internal_user_id(
+                telegram_id
+            )
+        )
 
     if internal_user_id is None:
+
         print(
             "POINTS ERROR: internal user not found:",
             telegram_id,
@@ -347,38 +530,57 @@ async def award_quiz_points(
             "awarded_points": 0,
             "requested_points": requested_points,
             "daily_points": 0,
+            "remaining_points": DAILY_POINT_LIMIT,
             "daily_limit": DAILY_POINT_LIMIT,
         }
 
-    today_start = get_today_start()
+    # --------------------------------------------------------
+    # Today's points
+    # --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # Get today's earned points
-    # --------------------------------------------------------
+    today_start = get_today_start()
 
     daily_points = 0
 
     try:
+
         response = (
             supabase
             .table("leaderboard_points")
             .select("points")
-            .eq("user_id", internal_user_id)
-            .gte("created_at", today_start)
+            .eq(
+                "user_id",
+                internal_user_id,
+            )
+            .gte(
+                "created_at",
+                today_start,
+            )
             .execute()
         )
 
         rows = response.data or []
 
         for row in rows:
+
             try:
+
                 daily_points += int(
-                    row.get("points", 0) or 0
+                    row.get(
+                        "points",
+                        0,
+                    )
+                    or 0
                 )
-            except (TypeError, ValueError):
+
+            except (
+                TypeError,
+                ValueError,
+            ):
                 continue
 
     except Exception as exc:
+
         print(
             "DAILY POINTS ERROR:",
             type(exc).__name__,
@@ -389,11 +591,12 @@ async def award_quiz_points(
             "awarded_points": 0,
             "requested_points": requested_points,
             "daily_points": 0,
+            "remaining_points": DAILY_POINT_LIMIT,
             "daily_limit": DAILY_POINT_LIMIT,
         }
 
     # --------------------------------------------------------
-    # Daily limit
+    # Remaining daily points
     # --------------------------------------------------------
 
     remaining_points = max(
@@ -406,31 +609,42 @@ async def award_quiz_points(
         remaining_points,
     )
 
+    # --------------------------------------------------------
+    # Daily limit reached
+    # --------------------------------------------------------
+
     if awarded_points <= 0:
+
         return {
             "awarded_points": 0,
             "requested_points": requested_points,
             "daily_points": daily_points,
+            "remaining_points": remaining_points,
             "daily_limit": DAILY_POINT_LIMIT,
         }
 
     # --------------------------------------------------------
-    # Insert awarded points
+    # Insert points
     # --------------------------------------------------------
 
     try:
-        supabase.table("leaderboard_points").insert(
+
+        supabase.table(
+            "leaderboard_points"
+        ).insert(
             {
                 "user_id": internal_user_id,
                 "points": awarded_points,
                 "reason": (
                     f"quiz:{difficulty}:"
-                    f"{question_count}"
+                    f"{question_count}:"
+                    f"{correct_count}"
                 ),
             }
         ).execute()
 
     except Exception as exc:
+
         print(
             "AWARD POINTS ERROR:",
             type(exc).__name__,
@@ -441,13 +655,26 @@ async def award_quiz_points(
             "awarded_points": 0,
             "requested_points": requested_points,
             "daily_points": daily_points,
+            "remaining_points": remaining_points,
             "daily_limit": DAILY_POINT_LIMIT,
         }
+
+    new_daily_points = (
+        daily_points
+        + awarded_points
+    )
+
+    new_remaining_points = max(
+        DAILY_POINT_LIMIT
+        - new_daily_points,
+        0,
+    )
 
     return {
         "awarded_points": awarded_points,
         "requested_points": requested_points,
-        "daily_points": daily_points + awarded_points,
+        "daily_points": new_daily_points,
+        "remaining_points": new_remaining_points,
         "daily_limit": DAILY_POINT_LIMIT,
     }
 
@@ -462,7 +689,8 @@ def leaderboard_keyboard(user_id):
             InlineKeyboardButton(
                 text="🔄 تحديث",
                 callback_data=(
-                    f"leaderboard:refresh:{user_id}"
+                    f"leaderboard:refresh:"
+                    f"{user_id}"
                 ),
             )
         ],
@@ -470,7 +698,8 @@ def leaderboard_keyboard(user_id):
             InlineKeyboardButton(
                 text="🔙 رجوع للاختبارات",
                 callback_data=(
-                    f"quiz:back:{user_id}"
+                    f"main:quizzes:"
+                    f"{user_id}"
                 ),
             )
         ],
@@ -478,11 +707,75 @@ def leaderboard_keyboard(user_id):
             InlineKeyboardButton(
                 text="🏠 القائمة الرئيسية",
                 callback_data=(
-                    f"back_main:{user_id}"
+                    f"back_main:"
+                    f"{user_id}"
                 ),
             )
         ],
     ])
+
+
+# ============================================================
+# Get today's points
+# ============================================================
+
+async def get_today_points(
+    internal_user_id,
+):
+    if internal_user_id is None:
+        return 0
+
+    try:
+
+        today_start = get_today_start()
+
+        response = (
+            supabase
+            .table("leaderboard_points")
+            .select("points")
+            .eq(
+                "user_id",
+                internal_user_id,
+            )
+            .gte(
+                "created_at",
+                today_start,
+            )
+            .execute()
+        )
+
+        rows = response.data or []
+
+        total = 0
+
+        for row in rows:
+
+            try:
+                total += int(
+                    row.get(
+                        "points",
+                        0,
+                    )
+                    or 0
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+        return total
+
+    except Exception as exc:
+
+        print(
+            "GET TODAY POINTS ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        return 0
 
 
 # ============================================================
@@ -503,7 +796,12 @@ async def show_leaderboard(
 
     user_id = query.from_user.id
 
+    # --------------------------------------------------------
+    # Load all leaderboard points
+    # --------------------------------------------------------
+
     try:
+
         response = (
             supabase
             .table("leaderboard_points")
@@ -516,6 +814,7 @@ async def show_leaderboard(
         rows = response.data or []
 
     except Exception as exc:
+
         print(
             "LEADERBOARD POINTS ERROR:",
             type(exc).__name__,
@@ -529,191 +828,281 @@ async def show_leaderboard(
                 user_id
             ),
         )
+
         return
 
     # --------------------------------------------------------
-    # Aggregate points by internal user ID
+    # Aggregate total points
     # --------------------------------------------------------
 
     totals = {}
 
     for row in rows:
-        internal_user_id = row.get("user_id")
+
+        internal_user_id = row.get(
+            "user_id"
+        )
 
         if internal_user_id is None:
             continue
 
         try:
-            points = int(
-                row.get("points", 0) or 0
+
+            internal_user_id = int(
+                internal_user_id
             )
-        except (TypeError, ValueError):
-            points = 0
+
+            points = int(
+                row.get(
+                    "points",
+                    0,
+                )
+                or 0
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
 
         if points <= 0:
             continue
 
-        try:
-            internal_user_id = int(
-                internal_user_id
-            )
-        except (TypeError, ValueError):
-            continue
-
         totals[internal_user_id] = (
-            totals.get(internal_user_id, 0)
+            totals.get(
+                internal_user_id,
+                0,
+            )
             + points
         )
 
-    if not totals:
-        await query.edit_message_text(
-            "🏆 لوحة المتصدرين\n\n"
-            "لا توجد نقاط مسجلة حتى الآن.\n\n"
-            "ابدأ بحل الاختبارات واجمع نقاطك! 🧪",
-            reply_markup=leaderboard_keyboard(
-                user_id
-            ),
+    # --------------------------------------------------------
+    # Current user
+    # --------------------------------------------------------
+
+    current_internal_id = (
+        await get_internal_user_id(
+            user_id
         )
-        return
+    )
+
+    current_total_points = 0
+
+    if current_internal_id is not None:
+
+        current_total_points = totals.get(
+            int(current_internal_id),
+            0,
+        )
+
+    current_daily_points = (
+        await get_today_points(
+            current_internal_id
+        )
+    )
+
+    current_remaining_points = max(
+        DAILY_POINT_LIMIT
+        - current_daily_points,
+        0,
+    )
 
     # --------------------------------------------------------
-    # Sort
+    # Ranking
     # --------------------------------------------------------
 
     ranking = sorted(
         totals.items(),
-        key=lambda item: item[1],
+        key=lambda item: (
+            item[1],
+            -item[0],
+        ),
         reverse=True,
     )[:LEADERBOARD_LIMIT]
+
+    # --------------------------------------------------------
+    # User mapping
+    # --------------------------------------------------------
 
     internal_ids = [
         internal_user_id
         for internal_user_id, _ in ranking
     ]
 
-    # --------------------------------------------------------
-    # Map users.id → telegram_id
-    # --------------------------------------------------------
-
     telegram_ids = []
 
-    try:
-        response = (
-            supabase
-            .table("users")
-            .select(
-                "id, telegram_id"
-            )
-            .in_("id", internal_ids)
-            .execute()
-        )
+    internal_to_telegram = {}
 
-        user_rows = response.data or []
+    if internal_ids:
 
-        internal_to_telegram = {}
+        try:
 
-        for row in user_rows:
-            internal_id = row.get("id")
-            telegram_id = row.get("telegram_id")
-
-            if (
-                internal_id is None
-                or telegram_id is None
-            ):
-                continue
-
-            try:
-                internal_id = int(internal_id)
-                telegram_id = int(telegram_id)
-            except (TypeError, ValueError):
-                continue
-
-            internal_to_telegram[
-                internal_id
-            ] = telegram_id
-
-            telegram_ids.append(
-                telegram_id
+            response = (
+                supabase
+                .table("users")
+                .select(
+                    "id, telegram_id"
+                )
+                .in_(
+                    "id",
+                    internal_ids,
+                )
+                .execute()
             )
 
-    except Exception as exc:
-        print(
-            "LEADERBOARD USER MAP ERROR:",
-            type(exc).__name__,
-            exc,
+            user_rows = (
+                response.data or []
+            )
+
+            for row in user_rows:
+
+                internal_id = row.get(
+                    "id"
+                )
+
+                telegram_id = row.get(
+                    "telegram_id"
+                )
+
+                if (
+                    internal_id is None
+                    or telegram_id is None
+                ):
+                    continue
+
+                try:
+
+                    internal_id = int(
+                        internal_id
+                    )
+
+                    telegram_id = int(
+                        telegram_id
+                    )
+
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+                internal_to_telegram[
+                    internal_id
+                ] = telegram_id
+
+                telegram_ids.append(
+                    telegram_id
+                )
+
+        except Exception as exc:
+
+            print(
+                "LEADERBOARD USER MAP ERROR:",
+                type(exc).__name__,
+                exc,
+            )
+
+    # --------------------------------------------------------
+    # Display data
+    # --------------------------------------------------------
+
+    display_data = (
+        await get_user_display_data(
+            telegram_ids
         )
-
-        internal_to_telegram = {}
-
-    # --------------------------------------------------------
-    # Get latest display information
-    # --------------------------------------------------------
-
-    display_data = await get_user_display_data(
-        telegram_ids
     )
 
     # --------------------------------------------------------
-    # Build message
+    # Build leaderboard
     # --------------------------------------------------------
 
     lines = [
         "🏆 لوحة المتصدرين",
         "",
+        (
+            f"📅 نقاطك اليوم: "
+            f"⭐ {current_daily_points} / "
+            f"{DAILY_POINT_LIMIT}"
+        ),
+        (
+            f"🔥 المتبقي لك اليوم: "
+            f"{current_remaining_points} نقطة"
+        ),
+        "",
+        "━━━━━━━━━━━━━━",
+        "",
         "أفضل الطلاب حسب مجموع النقاط:",
         "",
     ]
 
-    medals = {
-        1: "🥇",
-        2: "🥈",
-        3: "🥉",
-    }
+    if not ranking:
 
-    for position, (
-        internal_user_id,
-        points,
-    ) in enumerate(
-        ranking,
-        start=1,
-    ):
-        telegram_id = internal_to_telegram.get(
-            internal_user_id
-        )
+        lines.extend([
+            "لا توجد نقاط مسجلة حتى الآن.",
+            "",
+            "ابدأ بحل الاختبارات واجمع نقاطك! 🧪",
+        ])
 
-        user_data = display_data.get(
-            telegram_id,
-            {
-                "telegram_id": telegram_id,
-            },
-        )
+    else:
 
-        display_name = get_user_display_name(
-            user_data
-        )
+        medals = {
+            1: "🥇",
+            2: "🥈",
+            3: "🥉",
+        }
 
-        prefix = medals.get(
-            position,
-            f"{position}.",
-        )
+        for position, (
+            internal_user_id,
+            points,
+        ) in enumerate(
+            ranking,
+            start=1,
+        ):
 
-        lines.append(
-            f"{prefix} {display_name} — "
-            f"⭐ {points} نقطة"
-        )
+            telegram_id = (
+                internal_to_telegram.get(
+                    internal_user_id
+                )
+            )
+
+            user_data = display_data.get(
+                telegram_id,
+                {
+                    "telegram_id": telegram_id
+                },
+            )
+
+            display_name = (
+                get_user_display_name(
+                    user_data
+                )
+            )
+
+            prefix = medals.get(
+                position,
+                f"{position}.",
+            )
+
+            lines.append(
+                f"{prefix} "
+                f"{display_name} — "
+                f"⭐ {points} نقطة"
+            )
 
     # --------------------------------------------------------
-    # Current user's rank
+    # Current user's total rank
     # --------------------------------------------------------
-
-    current_internal_id = (
-        await get_internal_user_id(user_id)
-    )
 
     if current_internal_id is not None:
-        current_points = totals.get(
-            int(current_internal_id),
-            0,
+
+        full_ranking = sorted(
+            totals.items(),
+            key=lambda item: (
+                item[1],
+                -item[0],
+            ),
+            reverse=True,
         )
 
         current_rank = None
@@ -722,29 +1111,38 @@ async def show_leaderboard(
             internal_user_id,
             _points,
         ) in enumerate(
-            sorted(
-                totals.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            ),
+            full_ranking,
             start=1,
         ):
-            if int(internal_user_id) == int(
+
+            if int(
+                internal_user_id
+            ) == int(
                 current_internal_id
             ):
+
                 current_rank = index
                 break
 
         lines.extend([
             "",
             "━━━━━━━━━━━━━━",
-            f"👤 نقاطك: ⭐ {current_points}",
+            "",
+            (
+                f"👤 مجموع نقاطك: "
+                f"⭐ {current_total_points}"
+            ),
         ])
 
         if current_rank is not None:
+
             lines.append(
                 f"📊 ترتيبك: #{current_rank}"
             )
+
+    # --------------------------------------------------------
+    # Send
+    # --------------------------------------------------------
 
     await query.edit_message_text(
         "\n".join(lines),
@@ -773,41 +1171,61 @@ async def leaderboard_callback(
 
     parts = query.data.split(":")
 
-    # leaderboard:action:user_id
+    # Expected:
+    #
+    # leaderboard:refresh:user_id
+    #
+
     if len(parts) != 3:
+
         await query.answer(
             invalid_selection(),
             show_alert=True,
         )
+
         return
 
     if parts[0] != "leaderboard":
+
         await query.answer(
             invalid_selection(),
             show_alert=True,
         )
+
         return
 
     action = parts[1]
     owner_id = parts[2]
 
     try:
-        owner_id = int(owner_id)
-    except (TypeError, ValueError):
+
+        owner_id = int(
+            owner_id
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
         await query.answer(
             invalid_selection(),
             show_alert=True,
         )
+
         return
 
     if query.from_user.id != owner_id:
+
         await query.answer(
             owner_error(),
             show_alert=True,
         )
+
         return
 
     if action == "refresh":
+
         await query.answer(
             "🔄 تم تحديث لوحة المتصدرين."
         )
@@ -816,6 +1234,7 @@ async def leaderboard_callback(
             update,
             context,
         )
+
         return
 
     await query.answer(
