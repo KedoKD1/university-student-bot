@@ -268,10 +268,6 @@ def award_quiz_points(
     # --------------------------------------------------------
     # Get correct answers directly from database
     # --------------------------------------------------------
-    #
-    # This prevents the leaderboard from trusting
-    # a runtime score.
-    #
 
     answers_result = (
         supabase
@@ -296,11 +292,10 @@ def award_quiz_points(
         if row.get("is_correct") is True
     )
 
-    # If the database has answer records,
+    # If database answer records exist,
     # always trust the database.
     #
-    # If for some reason no records exist,
-    # fall back to the value supplied by quizzes.py.
+    # Otherwise use the value supplied by quizzes.py.
 
     if answer_rows:
 
@@ -538,6 +533,15 @@ def leaderboard_keyboard(
         ],
         [
             InlineKeyboardButton(
+                text="🧪 الرجوع للاختبارات",
+                callback_data=(
+                    f"quiz:menu:"
+                    f"{user_id}"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🏠 القائمة الرئيسية",
                 callback_data=(
                     f"back_main:"
@@ -676,11 +680,6 @@ async def show_leaderboard(
 
     # --------------------------------------------------------
     # Sort
-    #
-    # 1. Highest points first
-    # 2. Lower user ID first when tied
-    #
-    # This makes ranking deterministic.
     # --------------------------------------------------------
 
     ranking = sorted(
@@ -949,6 +948,7 @@ async def leaderboard_callback(
     if (
         query is None
         or query.from_user is None
+        or not query.data
     ):
         return
 
