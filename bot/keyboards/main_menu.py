@@ -2,6 +2,8 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
+
 def main_menu_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
@@ -50,14 +52,6 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
-                text="🏆 المتصدرين",
-                callback_data=(
-                    f"main:leaderboard:{user_id}"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text="🤖 الذكاء الاصطناعي",
                 callback_data=(
                     f"main:ai:{user_id}"
@@ -73,6 +67,8 @@ def main_menu_keyboard(user_id):
             )
         ],
     ])
+
+
 def back_main_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
