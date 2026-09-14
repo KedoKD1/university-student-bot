@@ -743,6 +743,14 @@ def quizzes_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
+                "🏆 لوحة المتصدرين",
+                callback_data=(
+                    f"quiz:leaderboard:{user_id}"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "📚 اختيار المرحلة",
                 callback_data=(
                     f"quiz:stages:{user_id}"
