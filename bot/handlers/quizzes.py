@@ -751,14 +751,6 @@ def quizzes_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
-                "🏆 لوحة المتصدرين",
-                callback_data=(
-                    f"quiz:leaderboard:{user_id}"
-                ),
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 "🏠 القائمة الرئيسية",
                 callback_data=(
                     f"back_main:{user_id}"
@@ -961,6 +953,15 @@ async def show_quiz_stages(
                     ),
                 )
             ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "🏆 لوحة المتصدرين",
+            callback_data=(
+                f"quiz:leaderboard:{user_id}"
+            ),
+        )
+    ])
 
     keyboard.append([
         InlineKeyboardButton(
