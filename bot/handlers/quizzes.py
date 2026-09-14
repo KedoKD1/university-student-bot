@@ -962,14 +962,6 @@ async def show_quiz_stages(
                 )
             ])
 
-    keyboard.append([
-        InlineKeyboardButton(
-            "🏆 لوحة المتصدرين",
-            callback_data=(
-                f"quiz:leaderboard:{user_id}"
-            ),
-        )
-    ])
 
     keyboard.append([
         InlineKeyboardButton(
