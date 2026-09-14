@@ -1017,24 +1017,12 @@ async def show_leaderboard(
     # Build leaderboard
     # --------------------------------------------------------
 
-    lines = [
-        "🏆 لوحة المتصدرين",
-        "",
-        (
-            f"📅 نقاطك اليوم: "
-            f"⭐ {current_daily_points} / "
-            f"{DAILY_POINT_LIMIT}"
-        ),
-        (
-            f"🔥 المتبقي لك اليوم: "
-            f"{current_remaining_points} نقطة"
-        ),
-        "",
-        "━━━━━━━━━━━━━━",
-        "",
-        "أفضل الطلاب حسب مجموع النقاط:",
-        "",
-    ]
+lines = [
+    "🏆 لوحة المتصدرين",
+    "",
+    "أفضل الطلاب حسب مجموع النقاط:",
+    "",
+]
 
     if not ranking:
 
@@ -1139,6 +1127,20 @@ async def show_leaderboard(
             lines.append(
                 f"📊 ترتيبك: #{current_rank}"
             )
+
+
+        lines.extend([
+            (
+                f"📅 نقاطك اليوم: "
+                f"⭐ {current_daily_points} / "
+                f"{DAILY_POINT_LIMIT}"
+            ),
+            (
+                f"🔥 المتبقي لك اليوم: "
+                f"{current_remaining_points} نقطة"
+            ),
+        ])
+
 
     # --------------------------------------------------------
     # Send
