@@ -32,7 +32,6 @@ def format_date(date_value):
         return "غير محدد"
 
     value = str(date_value)
-
     parts = value.split("-")
 
     if len(parts) == 3:
@@ -54,21 +53,33 @@ def format_time(time_value):
     return value
 
 
+def owner_error():
+    return "⛔ هذا الزر ليس لك."
+
+
+def invalid_selection():
+    return "❌ اختيار غير صالح."
+
+
 # ============================================================
-# Student keyboards
+# Keyboards
 # ============================================================
 
 def exam_stages_keyboard(stages, user_id):
     keyboard = []
 
     for stage in stages:
-        if stage["is_active"]:
+        stage_id = stage["id"]
+        stage_number = stage["stage_number"]
+        is_active = stage.get("is_active", False)
+
+        if is_active:
             keyboard.append([
                 InlineKeyboardButton(
-                    text=f"📚 المرحلة {stage['stage_number']}",
+                    text=f"📚 المرحلة {stage_number}",
                     callback_data=(
                         f"exam_stage:"
-                        f"{stage['id']}:"
+                        f"{stage_id}:"
                         f"{user_id}"
                     ),
                 )
@@ -76,10 +87,10 @@ def exam_stages_keyboard(stages, user_id):
         else:
             keyboard.append([
                 InlineKeyboardButton(
-                    text=f"🔒 المرحلة {stage['stage_number']}",
+                    text=f"🔒 المرحلة {stage_number}",
                     callback_data=(
                         f"exam_locked:"
-                        f"{stage['id']}:"
+                        f"{stage_id}:"
                         f"{user_id}"
                     ),
                 )
@@ -152,6 +163,27 @@ def exam_types_keyboard(stage_id, user_id):
     ])
 
 
+def exam_results_keyboard(stage_id, user_id):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🔙 رجوع لأنواع الامتحانات",
+                callback_data=(
+                    f"exam_stage:"
+                    f"{stage_id}:"
+                    f"{user_id}"
+                ),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🏠 القائمة الرئيسية",
+                callback_data=f"back_main:{user_id}",
+            )
+        ],
+    ])
+
+
 # ============================================================
 # Student: show stages
 # ============================================================
@@ -165,42 +197,91 @@ async def show_exam_dates(
     if query is None or query.from_user is None:
         return
 
-    parts = query.data.split(":")
+    data = query.data or ""
+    parts = data.split(":")
 
-    if len(parts) != 3:
+    # main:exams:user_id
+    if len(parts) != 3 or parts[0] != "main":
         await query.answer(
-            "❌ اختيار غير صالح.",
+            invalid_selection(),
             show_alert=True,
         )
         return
 
-    user_id = int(parts[2])
+    if parts[1] != "exams":
+        await query.answer(
+            invalid_selection(),
+            show_alert=True,
+        )
+        return
+
+    try:
+        user_id = int(parts[2])
+    except (TypeError, ValueError):
+        await query.answer(
+            "❌ المستخدم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذه القائمة ليست لك.",
+            owner_error(),
             show_alert=True,
         )
         return
 
     await query.answer()
 
-    response = (
-        supabase
-        .table("stages")
-        .select(
-            "id, stage_number, is_active"
+    try:
+        response = (
+            supabase
+            .table("stages")
+            .select(
+                "id, stage_number, is_active"
+            )
+            .order("stage_number")
+            .execute()
         )
-        .order("stage_number")
-        .execute()
-    )
 
-    stages = response.data or []
+        stages = response.data or []
+
+    except Exception as exc:
+        print(
+            "EXAM STAGES ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        await query.edit_message_text(
+            "❌ تعذر تحميل المراحل حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ]
+            ]),
+        )
+        return
 
     if not stages:
         await query.edit_message_text(
             "📋 مواعيد الامتحانات\n\n"
-            "❌ لا توجد مراحل دراسية حاليًا."
+            "❌ لا توجد مراحل دراسية حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ]
+            ]),
         )
         return
 
@@ -227,51 +308,100 @@ async def exam_stage(
     if query is None or query.from_user is None:
         return
 
-    parts = query.data.split(":")
+    data = query.data or ""
+    parts = data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 3 or parts[0] != "exam_stage":
         await query.answer(
-            "❌ اختيار غير صالح.",
+            invalid_selection(),
             show_alert=True,
         )
         return
 
-    stage_id = parts[1]
-    user_id = int(parts[2])
+    try:
+        stage_id = int(parts[1])
+        user_id = int(parts[2])
+    except (TypeError, ValueError):
+        await query.answer(
+            invalid_selection(),
+            show_alert=True,
+        )
+        return
 
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            owner_error(),
             show_alert=True,
         )
         return
 
     await query.answer()
 
-    stage_response = (
-        supabase
-        .table("stages")
-        .select(
-            "id, stage_number, is_active"
+    try:
+        response = (
+            supabase
+            .table("stages")
+            .select(
+                "id, stage_number, is_active"
+            )
+            .eq("id", stage_id)
+            .limit(1)
+            .execute()
         )
-        .eq("id", stage_id)
-        .limit(1)
-        .execute()
-    )
 
-    stages = stage_response.data or []
+        stages = response.data or []
+
+    except Exception as exc:
+        print(
+            "EXAM STAGE ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        await query.edit_message_text(
+            "❌ تعذر تحميل المرحلة.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ]
+            ]),
+        )
+        return
 
     if not stages:
         await query.edit_message_text(
-            "❌ المرحلة غير موجودة."
+            "❌ المرحلة غير موجودة.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🔙 رجوع للمراحل",
+                        callback_data=(
+                            f"exam_back:{user_id}"
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ],
+            ]),
         )
         return
 
     stage = stages[0]
 
-    if not stage["is_active"]:
+    if not stage.get("is_active", False):
         await query.answer(
-            "🔒 هذه المرحلة غير متاحة حاليًا.",
+            "🔒 هذه المرحلة غير متاحة حالياً.",
             show_alert=True,
         )
         return
@@ -281,7 +411,7 @@ async def exam_stage(
         f"{stage['stage_number']}\n\n"
         "اختر نوع الامتحان:",
         reply_markup=exam_types_keyboard(
-            int(stage_id),
+            stage_id,
             user_id,
         ),
     )
@@ -300,100 +430,153 @@ async def exam_type(
     if query is None or query.from_user is None:
         return
 
-    parts = query.data.split(":")
+    data = query.data or ""
+    parts = data.split(":")
 
-    if len(parts) != 4:
+    if len(parts) != 4 or parts[0] != "exam_type":
         await query.answer(
-            "❌ اختيار غير صالح.",
+            invalid_selection(),
             show_alert=True,
         )
         return
 
-    stage_id = int(parts[1])
-    exam_type_value = parts[2]
-    user_id = int(parts[3])
+    try:
+        stage_id = int(parts[1])
+        exam_type_value = parts[2]
+        user_id = int(parts[3])
+    except (TypeError, ValueError):
+        await query.answer(
+            invalid_selection(),
+            show_alert=True,
+        )
+        return
 
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            owner_error(),
+            show_alert=True,
+        )
+        return
+
+    allowed_types = {
+        "quiz",
+        "midterm",
+        "final",
+        "other",
+        "all",
+    }
+
+    if exam_type_value not in allowed_types:
+        await query.answer(
+            "❌ نوع الامتحان غير صالح.",
             show_alert=True,
         )
         return
 
     await query.answer()
 
-    stage_response = (
-        supabase
-        .table("stages")
-        .select("id, stage_number")
-        .eq("id", stage_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        stage_response = (
+            supabase
+            .table("stages")
+            .select(
+                "id, stage_number, is_active"
+            )
+            .eq("id", stage_id)
+            .limit(1)
+            .execute()
+        )
 
-    stages = stage_response.data or []
+        stages = stage_response.data or []
 
-    if not stages:
+        if not stages:
+            await query.edit_message_text(
+                "❌ المرحلة غير موجودة.",
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع للمراحل",
+                            callback_data=(
+                                f"exam_back:{user_id}"
+                            ),
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 القائمة الرئيسية",
+                            callback_data=(
+                                f"back_main:{user_id}"
+                            ),
+                        )
+                    ],
+                ]),
+            )
+            return
+
+        stage = stages[0]
+
+        if not stage.get("is_active", False):
+            await query.answer(
+                "🔒 هذه المرحلة غير متاحة حالياً.",
+                show_alert=True,
+            )
+            return
+
+        stage_number = stage["stage_number"]
+
+        builder = (
+            supabase
+            .table("exam_dates")
+            .select(
+                "id, stage_id, subject_id, exam_type, "
+                "title, exam_date, exam_time, notes, "
+                "subjects(name)"
+            )
+            .eq("stage_id", stage_id)
+            .eq("is_active", True)
+            .is_("deleted_at", "null")
+        )
+
+        if exam_type_value != "all":
+            builder = builder.eq(
+                "exam_type",
+                exam_type_value,
+            )
+
+        response = (
+            builder
+            .order("exam_date")
+            .order("exam_time")
+            .execute()
+        )
+
+        exams = response.data or []
+
+    except Exception as exc:
+        print(
+            "EXAM DATES ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
         await query.edit_message_text(
-            "❌ المرحلة غير موجودة."
+            "❌ تعذر تحميل مواعيد الامتحانات.",
+            reply_markup=exam_results_keyboard(
+                stage_id,
+                user_id,
+            ),
         )
         return
-
-    stage_number = stages[0]["stage_number"]
-
-    builder = (
-        supabase
-        .table("exam_dates")
-        .select(
-            "id, stage_id, subject_id, exam_type, "
-            "title, exam_date, exam_time, notes, "
-            "subjects(name)"
-        )
-        .eq("stage_id", stage_id)
-        .eq("is_active", True)
-        .is_("deleted_at", "null")
-    )
-
-    if exam_type_value != "all":
-        builder = builder.eq(
-            "exam_type",
-            exam_type_value,
-        )
-
-    response = (
-        builder
-        .order("exam_date")
-        .order("exam_time")
-        .execute()
-    )
-
-    exams = response.data or []
 
     if not exams:
         await query.edit_message_text(
             f"📋 مواعيد امتحانات المرحلة "
             f"{stage_number}\n\n"
-            "❌ لا توجد مواعيد مسجلة لهذا النوع حاليًا.",
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        "🔙 رجوع لأنواع الامتحانات",
-                        callback_data=(
-                            f"exam_stage:"
-                            f"{stage_id}:"
-                            f"{user_id}"
-                        ),
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🏠 القائمة الرئيسية",
-                        callback_data=(
-                            f"back_main:{user_id}"
-                        ),
-                    )
-                ],
-            ]),
+            "❌ لا توجد مواعيد مسجلة لهذا النوع حالياً.",
+            reply_markup=exam_results_keyboard(
+                stage_id,
+                user_id,
+            ),
         )
         return
 
@@ -410,9 +593,11 @@ async def exam_type(
         if isinstance(subject_data, dict):
             subject_name = subject_data.get("name")
 
+        title = exam.get("title") or "امتحان"
+
         lines.append(
-            f"{format_exam_type(exam.get('exam_type'))} "
-            f"— {exam.get('title', 'امتحان')}"
+            f"{format_exam_type(exam.get('exam_type'))}"
+            f" — {title}"
         )
 
         if subject_name:
@@ -421,7 +606,7 @@ async def exam_type(
             )
 
         lines.append(
-            f"📅 التاريخ: "
+            "📅 التاريخ: "
             f"{format_date(exam.get('exam_date'))}"
         )
 
@@ -445,26 +630,10 @@ async def exam_type(
 
     await query.edit_message_text(
         "\n".join(lines).strip(),
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "🔙 رجوع لأنواع الامتحانات",
-                    callback_data=(
-                        f"exam_stage:"
-                        f"{stage_id}:"
-                        f"{user_id}"
-                    ),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🏠 القائمة الرئيسية",
-                    callback_data=(
-                        f"back_main:{user_id}"
-                    ),
-                )
-            ],
-        ]),
+        reply_markup=exam_results_keyboard(
+            stage_id,
+            user_id,
+        ),
     )
 
 
@@ -481,26 +650,34 @@ async def exam_locked(
     if query is None or query.from_user is None:
         return
 
-    parts = query.data.split(":")
+    data = query.data or ""
+    parts = data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 3 or parts[0] != "exam_locked":
         await query.answer(
-            "❌ اختيار غير صالح.",
+            invalid_selection(),
             show_alert=True,
         )
         return
 
-    user_id = int(parts[2])
+    try:
+        user_id = int(parts[2])
+    except (TypeError, ValueError):
+        await query.answer(
+            invalid_selection(),
+            show_alert=True,
+        )
+        return
 
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            owner_error(),
             show_alert=True,
         )
         return
 
     await query.answer(
-        "🔒 هذه المرحلة غير متاحة حاليًا.",
+        "🔒 هذه المرحلة غير متاحة حالياً.",
         show_alert=True,
     )
 
@@ -518,25 +695,96 @@ async def exam_back(
     if query is None or query.from_user is None:
         return
 
-    parts = query.data.split(":")
+    data = query.data or ""
+    parts = data.split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 2 or parts[0] != "exam_back":
         await query.answer(
-            "❌ اختيار غير صالح.",
+            invalid_selection(),
             show_alert=True,
         )
         return
 
-    user_id = int(parts[1])
+    try:
+        user_id = int(parts[1])
+    except (TypeError, ValueError):
+        await query.answer(
+            invalid_selection(),
+            show_alert=True,
+        )
+        return
 
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            owner_error(),
             show_alert=True,
         )
         return
 
-    await show_exam_dates(
-        update,
-        context,
+    # مهم:
+    # لا نستدعي show_exam_dates هنا لأن هذا callback
+    # exam_back:user_id وليس main:exams:user_id.
+    # بدلاً من ذلك نحمّل المراحل مباشرة.
+
+    await query.answer()
+
+    try:
+        response = (
+            supabase
+            .table("stages")
+            .select(
+                "id, stage_number, is_active"
+            )
+            .order("stage_number")
+            .execute()
+        )
+
+        stages = response.data or []
+
+    except Exception as exc:
+        print(
+            "EXAM BACK STAGES ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        await query.edit_message_text(
+            "❌ تعذر تحميل المراحل حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ]
+            ]),
+        )
+        return
+
+    if not stages:
+        await query.edit_message_text(
+            "📋 مواعيد الامتحانات\n\n"
+            "❌ لا توجد مراحل دراسية حالياً.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "🏠 القائمة الرئيسية",
+                        callback_data=(
+                            f"back_main:{user_id}"
+                        ),
+                    )
+                ]
+            ]),
+        )
+        return
+
+    await query.edit_message_text(
+        "📋 مواعيد الامتحانات\n\n"
+        "اختر المرحلة الدراسية:",
+        reply_markup=exam_stages_keyboard(
+            stages,
+            user_id,
+        ),
     )
