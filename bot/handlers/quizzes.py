@@ -3114,34 +3114,32 @@ try:
                 correct_count=correct_count,
             )
 
-
-                if isinstance(
-                    award_result,
-                    dict,
-                ):
-                    awarded_points = int(
-                        award_result.get(
-                            "awarded_points",
-                            0,
-                        )
-                        or 0
+            if isinstance(
+                award_result,
+                dict,
+            ):
+                awarded_points = int(
+                    award_result.get(
+                        "awarded_points",
+                        0,
                     )
-                else:
-                    awarded_points = int(
-                        award_result or 0
-                    )
+                    or 0
+                )
+            else:
+                awarded_points = int(
+                    award_result or 0
+                )
 
             state[
                 "points_awarded"
             ] = True
 
-    except Exception as exc:
-
-        print(
-            "LEADERBOARD AWARD ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+except Exception as exc:
+    print(
+        "LEADERBOARD AWARD ERROR:",
+        type(exc).__name__,
+        exc,
+    )
 
     # ========================================================
     # Result text
