@@ -43,14 +43,6 @@ def invalid_selection():
 
 
 def get_user_display_name(user_data):
-    """
-    ترتيب عرض اسم المستخدم:
-    1. username
-    2. first_name + last_name
-    3. first_name
-    4. Telegram ID
-    """
-
     if not user_data:
         return "مستخدم"
 
@@ -84,7 +76,9 @@ def get_user_display_name(user_data):
     if full_name:
         return full_name
 
-    telegram_id = user_data.get("telegram_id")
+    telegram_id = user_data.get(
+        "telegram_id"
+    )
 
     if telegram_id is not None:
         return f"مستخدم {telegram_id}"
@@ -96,10 +90,11 @@ def get_user_display_name(user_data):
 # User mapping
 # ============================================================
 
-async def get_internal_user_id(telegram_id):
-    """
-    تحويل Telegram ID إلى users.id.
-    """
+async def get_internal_user_id(
+    telegram_id,
+):
+    if telegram_id is None:
+        return None
 
     try:
         response = (
@@ -108,7 +103,7 @@ async def get_internal_user_id(telegram_id):
             .select("id")
             .eq(
                 "telegram_id",
-                telegram_id,
+                int(telegram_id),
             )
             .limit(1)
             .execute()
@@ -135,11 +130,9 @@ async def get_internal_user_id(telegram_id):
 # Latest Telegram display data
 # ============================================================
 
-async def get_user_display_data(telegram_ids):
-    """
-    جلب أحدث بيانات المستخدمين.
-    """
-
+async def get_user_display_data(
+    telegram_ids,
+):
     if not telegram_ids:
         return {}
 
@@ -169,10 +162,6 @@ async def get_user_display_data(telegram_ids):
         return {}
 
     result = {}
-
-    # --------------------------------------------------------
-    # Primary source
-    # --------------------------------------------------------
 
     try:
 
@@ -221,10 +210,6 @@ async def get_user_display_data(telegram_ids):
             type(exc).__name__,
             exc,
         )
-
-    # --------------------------------------------------------
-    # Fallback
-    # --------------------------------------------------------
 
     missing_ids = [
         telegram_id
@@ -290,11 +275,6 @@ async def get_user_display_data(telegram_ids):
 # ============================================================
 
 def get_today_start():
-    """
-    بداية اليوم بتوقيت العراق UTC+3،
-    ثم تحويلها إلى UTC حتى تتوافق مع PostgreSQL timestamptz.
-    """
-
     iraq_offset = timedelta(
         hours=3
     )
@@ -331,8 +311,6 @@ def get_points_for_quiz(
     correct_count=None,
 ):
     """
-    حساب نقاط الاختبار.
-
     Easy   = 1 نقطة لكل إجابة صحيحة
     Medium = 2 نقاط لكل إجابة صحيحة
     Hard   = 3 نقاط لكل إجابة صحيحة
@@ -341,11 +319,17 @@ def get_points_for_quiz(
     1 سؤال  = +0
     5 أسئلة = +2
     10 أسئلة = +5
-
-    إذا correct_count غير موجود،
-    يتم اعتبار جميع الأسئلة صحيحة
-    للتوافق مع الاستدعاءات القديمة.
     """
+
+    if isinstance(
+        difficulty,
+        str,
+    ):
+        difficulty = (
+            difficulty
+            .strip()
+            .lower()
+        )
 
     try:
         question_count = int(
@@ -359,8 +343,10 @@ def get_points_for_quiz(
         question_count = 0
 
     try:
+
         if correct_count is None:
             correct_count = question_count
+
         else:
             correct_count = int(
                 correct_count
@@ -371,6 +357,11 @@ def get_points_for_quiz(
         ValueError,
     ):
         correct_count = 0
+
+    question_count = max(
+        question_count,
+        0,
+    )
 
     correct_count = max(
         min(
@@ -392,8 +383,10 @@ def get_points_for_quiz(
         0,
     )
 
-    # لا توجد نقاط إذا لم تكن هناك إجابة صحيحة.
-    if correct_count <= 0:
+    if (
+        correct_count <= 0
+        or difficulty_points <= 0
+    ):
         return 0
 
     return (
@@ -417,22 +410,36 @@ async def award_quiz_points(
 ):
     """
     إضافة نقاط للطالب بعد إنهاء الاختبار.
-
-    تدعم الدالة الاستدعاء الحالي الموجود
-    داخل quizzes.py:
-
-        user_id
-        quiz_id
-        difficulty
-        question_count
-        correct_count
-
-    كما تدعم الاستدعاء القديم:
-
-        telegram_id
-        difficulty
-        question_count
     """
+
+    # --------------------------------------------------------
+    # Normalize difficulty
+    # --------------------------------------------------------
+
+    if isinstance(
+        difficulty,
+        str,
+    ):
+        difficulty = (
+            difficulty
+            .strip()
+            .lower()
+        )
+
+    if difficulty not in DIFFICULTY_POINTS:
+
+        print(
+            "POINTS ERROR: invalid difficulty:",
+            repr(difficulty),
+        )
+
+        return {
+            "awarded_points": 0,
+            "requested_points": 0,
+            "daily_points": 0,
+            "remaining_points": DAILY_POINT_LIMIT,
+            "daily_limit": DAILY_POINT_LIMIT,
+        }
 
     # --------------------------------------------------------
     # Normalize question count
@@ -450,6 +457,7 @@ async def award_quiz_points(
         question_count = 0
 
     if question_count <= 0:
+
         return {
             "awarded_points": 0,
             "requested_points": 0,
@@ -459,16 +467,58 @@ async def award_quiz_points(
         }
 
     # --------------------------------------------------------
+    # Normalize correct count
+    # --------------------------------------------------------
+
+    try:
+        if correct_count is None:
+            correct_count = 0
+        else:
+            correct_count = int(
+                correct_count
+            )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        correct_count = 0
+
+    correct_count = max(
+        min(
+            correct_count,
+            question_count,
+        ),
+        0,
+    )
+
+    # --------------------------------------------------------
     # Calculate requested points
     # --------------------------------------------------------
 
-    requested_points = get_points_for_quiz(
-        difficulty=difficulty,
-        question_count=question_count,
-        correct_count=correct_count,
+    requested_points = (
+        get_points_for_quiz(
+            difficulty=difficulty,
+            question_count=question_count,
+            correct_count=correct_count,
+        )
+    )
+
+    print(
+        "QUIZ POINT CALCULATION:",
+        {
+            "difficulty": difficulty,
+            "question_count": question_count,
+            "correct_count": correct_count,
+            "requested_points": requested_points,
+            "quiz_id": quiz_id,
+            "user_id": user_id,
+            "telegram_id": telegram_id,
+        },
     )
 
     if requested_points <= 0:
+
         return {
             "awarded_points": 0,
             "requested_points": 0,
@@ -483,10 +533,10 @@ async def award_quiz_points(
 
     internal_user_id = None
 
-    # Current quizzes.py already sends database_user_id
     if user_id is not None:
 
         try:
+
             internal_user_id = int(
                 user_id
             )
@@ -495,12 +545,13 @@ async def award_quiz_points(
             TypeError,
             ValueError,
         ):
+
             internal_user_id = None
 
-    # Fallback: resolve from Telegram ID
     if internal_user_id is None:
 
         if telegram_id is None:
+
             print(
                 "POINTS ERROR: no user identifier."
             )
@@ -600,7 +651,8 @@ async def award_quiz_points(
     # --------------------------------------------------------
 
     remaining_points = max(
-        DAILY_POINT_LIMIT - daily_points,
+        DAILY_POINT_LIMIT
+        - daily_points,
         0,
     )
 
@@ -608,10 +660,6 @@ async def award_quiz_points(
         requested_points,
         remaining_points,
     )
-
-    # --------------------------------------------------------
-    # Daily limit reached
-    # --------------------------------------------------------
 
     if awarded_points <= 0:
 
@@ -627,21 +675,37 @@ async def award_quiz_points(
     # Insert points
     # --------------------------------------------------------
 
+    reason = (
+        f"quiz:{difficulty}:"
+        f"{question_count}:"
+        f"{correct_count}"
+    )
+
     try:
 
-        supabase.table(
-            "leaderboard_points"
-        ).insert(
+        response = (
+            supabase
+            .table("leaderboard_points")
+            .insert(
+                {
+                    "user_id": internal_user_id,
+                    "points": awarded_points,
+                    "reason": reason,
+                }
+            )
+            .execute()
+        )
+
+        print(
+            "POINTS INSERT SUCCESS:",
             {
                 "user_id": internal_user_id,
                 "points": awarded_points,
-                "reason": (
-                    f"quiz:{difficulty}:"
-                    f"{question_count}:"
-                    f"{correct_count}"
-                ),
-            }
-        ).execute()
+                "reason": reason,
+                "quiz_id": quiz_id,
+                "response": response.data,
+            },
+        )
 
     except Exception as exc:
 
@@ -683,7 +747,9 @@ async def award_quiz_points(
 # Leaderboard keyboard
 # ============================================================
 
-def leaderboard_keyboard(user_id):
+def leaderboard_keyboard(
+    user_id,
+):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
@@ -751,6 +817,7 @@ async def get_today_points(
         for row in rows:
 
             try:
+
                 total += int(
                     row.get(
                         "points",
@@ -796,10 +863,6 @@ async def show_leaderboard(
 
     user_id = query.from_user.id
 
-    # --------------------------------------------------------
-    # Load all leaderboard points
-    # --------------------------------------------------------
-
     try:
 
         response = (
@@ -830,10 +893,6 @@ async def show_leaderboard(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Aggregate total points
-    # --------------------------------------------------------
 
     totals = {}
 
@@ -877,10 +936,6 @@ async def show_leaderboard(
             + points
         )
 
-    # --------------------------------------------------------
-    # Current user
-    # --------------------------------------------------------
-
     current_internal_id = (
         await get_internal_user_id(
             user_id
@@ -908,10 +963,6 @@ async def show_leaderboard(
         0,
     )
 
-    # --------------------------------------------------------
-    # Ranking
-    # --------------------------------------------------------
-
     ranking = sorted(
         totals.items(),
         key=lambda item: (
@@ -921,17 +972,12 @@ async def show_leaderboard(
         reverse=True,
     )[:LEADERBOARD_LIMIT]
 
-    # --------------------------------------------------------
-    # User mapping
-    # --------------------------------------------------------
-
     internal_ids = [
         internal_user_id
         for internal_user_id, _ in ranking
     ]
 
     telegram_ids = []
-
     internal_to_telegram = {}
 
     if internal_ids:
@@ -1003,26 +1049,18 @@ async def show_leaderboard(
                 exc,
             )
 
-    # --------------------------------------------------------
-    # Display data
-    # --------------------------------------------------------
-
     display_data = (
         await get_user_display_data(
             telegram_ids
         )
     )
 
-    # --------------------------------------------------------
-    # Build leaderboard
-    # --------------------------------------------------------
-
     lines = [
-    "🏆 لوحة المتصدرين",
-    "",
-    "أفضل الطلاب حسب مجموع النقاط:",
-    "",
-]
+        "🏆 لوحة المتصدرين",
+        "",
+        "أفضل الطلاب حسب مجموع النقاط:",
+        "",
+    ]
 
     if not ranking:
 
@@ -1078,10 +1116,6 @@ async def show_leaderboard(
                 f"⭐ {points} نقطة"
             )
 
-    # --------------------------------------------------------
-    # Current user's total rank
-    # --------------------------------------------------------
-
     if current_internal_id is not None:
 
         full_ranking = sorted(
@@ -1128,7 +1162,6 @@ async def show_leaderboard(
                 f"📊 ترتيبك: #{current_rank}"
             )
 
-
         lines.extend([
             (
                 f"📅 نقاطك اليوم: "
@@ -1140,11 +1173,6 @@ async def show_leaderboard(
                 f"{current_remaining_points} نقطة"
             ),
         ])
-
-
-    # --------------------------------------------------------
-    # Send
-    # --------------------------------------------------------
 
     await query.edit_message_text(
         "\n".join(lines),
@@ -1172,11 +1200,6 @@ async def leaderboard_callback(
         return
 
     parts = query.data.split(":")
-
-    # Expected:
-    #
-    # leaderboard:refresh:user_id
-    #
 
     if len(parts) != 3:
 
