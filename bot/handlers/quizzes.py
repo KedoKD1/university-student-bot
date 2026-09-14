@@ -3095,27 +3095,24 @@ async def finish_quiz(
     # Daily limit is also handled there.
     # ========================================================
 
-    awarded_points = 0
+awarded_points = 0
 
-    try:
-
-        if not state.get("points_awarded"):
-
+try:
+    if not state.get("points_awarded"):
         if correct_count > 0:
-        
-    award_result = await award_quiz_points(
-        telegram_id=int(owner_id),
-        user_id=int(
-            state.get("database_user_id")
-            or 0
-        ),
-        quiz_id=quiz_id,
-        difficulty=state["difficulty"],
-        question_count=len(
-            state["questions"]
-        ),
-        correct_count=correct_count,
-    )
+            award_result = await award_quiz_points(
+                telegram_id=int(owner_id),
+                user_id=int(
+                    state.get("database_user_id")
+                    or 0
+                ),
+                quiz_id=quiz_id,
+                difficulty=state["difficulty"],
+                question_count=len(
+                    state["questions"]
+                ),
+                correct_count=correct_count,
+            )
 
 
                 if isinstance(
