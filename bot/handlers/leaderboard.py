@@ -749,6 +749,7 @@ async def award_quiz_points(
 
     payload = {
         "user_id": internal_user_id,
+        "quiz_id": int(quiz_id),
         "points": awarded_points,
         "reason": reason,
     }
