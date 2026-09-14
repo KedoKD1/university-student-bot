@@ -3098,77 +3098,46 @@ async def finish_quiz(
 
     try:
 
-        if not state.get(
-            "points_awarded"
-        ):
-
-            # Never award points for a quiz
-            # with zero correct answers.
+        if not state.get("points_awarded"):
 
             if correct_count > 0:
 
-                awarded_points = (
-                    award_quiz_points(
-                        user_id=int(
-                            state.get(
-                                "database_user_id"
-                            )
-                            or 0
-                        ),
-                        quiz_id=quiz_id,
-                        difficulty=state[
-                            "difficulty"
-                        ],
-                        question_count=len(
-                            state["questions"]
-                        ),
-                        correct_count=correct_count,
-                    )
+                award_result = award_quiz_points(
+                    user_id=int(
+                        state.get(
+                            "database_user_id"
+                        )
+                        or 0
+                    ),
+                    quiz_id=quiz_id,
+                    difficulty=state[
+                        "difficulty"
+                    ],
+                    question_count=len(
+                        state["questions"]
+                    ),
+                    correct_count=correct_count,
                 )
+
+                if isinstance(
+                    award_result,
+                    dict,
+                ):
+                    awarded_points = int(
+                        award_result.get(
+                            "awarded_points",
+                            0,
+                        )
+                        or 0
+                    )
+                else:
+                    awarded_points = int(
+                        award_result or 0
+                    )
 
             state[
                 "points_awarded"
             ] = True
-
-    except TypeError:
-
-        # Compatibility fallback if the currently
-        # installed leaderboard handler still uses
-        # the older function signature.
-
-        try:
-
-            if correct_count > 0:
-
-                awarded_points = (
-                    award_quiz_points(
-                        user_id=int(
-                            state.get(
-                                "database_user_id"
-                            )
-                            or 0
-                        ),
-                        quiz_id=quiz_id,
-                        difficulty=state[
-                            "difficulty"
-                        ],
-                        question_count=len(
-                            state["questions"]
-                        ),
-                    )
-                )
-
-            state[
-                "points_awarded"
-            ] = True
-
-        except Exception as exc:
-
-            print(
-                "LEADERBOARD AWARD ERROR:",
-                type(exc).__name__,
-                exc,
-            )
 
     except Exception as exc:
 
@@ -3250,9 +3219,9 @@ async def finish_quiz(
             ],
             [
                 InlineKeyboardButton(
-                    "🏆 المتصدرين",
+                    "🏆 لوحة المتصدرين",
                     callback_data=(
-                        f"main:leaderboard:"
+                        f"quiz:leaderboard:"
                         f"{owner_id}"
                     ),
                 )
@@ -3497,6 +3466,7 @@ async def quiz_callback(
     action = parts[1]
 
     handlers = {
+        "menu": show_quizzes,
         "stages": show_quiz_stages,
         "subjects": show_quiz_subjects,
         "section": show_quiz_sections,
@@ -3510,6 +3480,7 @@ async def quiz_callback(
         "cancel": cancel_quiz,
         "locked": quiz_locked,
         "subject_locked": quiz_subject_locked,
+        "leaderboard": show_leaderboard,
     }
 
     handler = handlers.get(
