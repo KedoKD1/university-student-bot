@@ -173,6 +173,11 @@ from bot.handlers.bundle_descriptions import (
 from bot.handlers.user_tracking import (
     track_user,
 )
+from bot.utils.debug_logger import (
+    configure_logging,
+    log_update,
+    global_error_handler,
+)
 from bot.utils.permission_guard import (
     permission_guard,
 )
