@@ -4,6 +4,10 @@ from telegram import (
 )
 
 
+# ============================================================
+# Main Menu Keyboard
+# ============================================================
+
 def main_menu_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
@@ -42,20 +46,6 @@ def main_menu_keyboard(user_id):
                 callback_data=(
                     f"main:grades:{user_id}"
                 ),
-            ),
-            InlineKeyboardButton(
-                text="🧪 الاختبارات",
-                callback_data=(
-                    f"main:quizzes:{user_id}"
-                ),
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="🤖 الذكاء الاصطناعي",
-                callback_data=(
-                    f"main:ai:{user_id}"
-                ),
             )
         ],
         [
@@ -68,6 +58,10 @@ def main_menu_keyboard(user_id):
         ],
     ])
 
+
+# ============================================================
+# Back To Main Menu Keyboard
+# ============================================================
 
 def back_main_keyboard(user_id):
     return InlineKeyboardMarkup([
