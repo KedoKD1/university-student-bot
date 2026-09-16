@@ -3,21 +3,34 @@ import os
 from dotenv import load_dotenv
 
 
+# ============================================================
+# Load Environment Variables
+# ============================================================
+
 load_dotenv()
 
 
+# ============================================================
+# Environment Configuration
+# ============================================================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-REQUIRED_CHANNEL_ID = os.getenv("REQUIRED_CHANNEL_ID")
-STUDENT_GROUP_ID = os.getenv("STUDENT_GROUP_ID")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv(
-    "OPENAI_MODEL",
-    "gpt-5.6-luna",
+REQUIRED_CHANNEL_ID = os.getenv(
+    "REQUIRED_CHANNEL_ID"
 )
 
+STUDENT_GROUP_ID = os.getenv(
+    "STUDENT_GROUP_ID"
+)
+
+
+# ============================================================
+# Validate Configuration
+# ============================================================
 
 def validate_config():
     required_values = {
