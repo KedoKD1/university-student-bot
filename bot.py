@@ -206,8 +206,10 @@ async def search_text_handler(
 # Main
 # ============================================================
 def main():
-    validate_config()
+    configure_logging()
 
+    validate_config()
+    
     if not BOT_TOKEN:
         raise ValueError(
             "BOT_TOKEN is not configured."
