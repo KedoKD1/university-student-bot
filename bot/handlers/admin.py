@@ -43,7 +43,9 @@ async def get_admin_permissions(
     if not admin:
         return None, set()
 
-    role = admin.get("role")
+    role = admin.get(
+        "role"
+    )
 
     if role == "owner":
         return admin, {
@@ -159,7 +161,7 @@ async def admin_command(
 
 
 # ============================================================
-# Build keyboard
+# Build keyboard from permission snapshot
 # ============================================================
 
 async def admin_keyboard_from_permissions(
@@ -167,6 +169,7 @@ async def admin_keyboard_from_permissions(
 ):
     keyboard = []
 
+    # Subjects
     if PERMISSION_MANAGE_SUBJECTS in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -175,6 +178,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Files
     if PERMISSION_MANAGE_FILES in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -183,6 +187,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Summaries
     if PERMISSION_MANAGE_SUMMARIES in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -191,6 +196,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Drawings
     if PERMISSION_MANAGE_DRAWINGS in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -199,6 +205,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Schedules
     if PERMISSION_MANAGE_SCHEDULES in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -207,6 +214,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Grades
     if PERMISSION_MANAGE_GRADES in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -215,6 +223,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Exam dates
     if PERMISSION_MANAGE_EXAMS in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -223,6 +232,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Admin tools
     has_tools = (
         PERMISSION_VIEW_STATISTICS in permissions
         or PERMISSION_MANAGE_ADMINS in permissions
@@ -237,6 +247,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Notifications
     if PERMISSION_MANAGE_ANNOUNCEMENTS in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -245,6 +256,7 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
+    # Settings
     if PERMISSION_MANAGE_SETTINGS in permissions:
         keyboard.append([
             InlineKeyboardButton(
@@ -348,9 +360,17 @@ async def delete_subject(
     response = (
         supabase
         .table("subjects")
-        .select("id, name")
-        .eq("id", subject_id)
-        .eq("stage_id", stage_id)
+        .select(
+            "id, name"
+        )
+        .eq(
+            "id",
+            subject_id,
+        )
+        .eq(
+            "stage_id",
+            stage_id,
+        )
         .limit(1)
         .execute()
     )
@@ -371,7 +391,7 @@ async def delete_subject(
     await query.edit_message_text(
         "⚠️ تأكيد تعطيل المادة\n\n"
         f"📘 المادة: {subject['name']}\n\n"
-        "هل أنت متأكد من تعطيل هذه المادة؟\n\n"
+        "هل أنت متأكد من تعطيل هذه المادة?\n\n"
         "ℹ️ سيتم إخفاؤها عن الطلاب بدون حذف "
         "بياناتها نهائياً.",
         reply_markup=InlineKeyboardMarkup([
@@ -388,7 +408,7 @@ async def delete_subject(
                 InlineKeyboardButton(
                     text="❌ إلغاء",
                     callback_data=(
-                        f"manage_subject:"
+                        "manage_subject:"
                         f"{subject_id}:{stage_id}"
                     ),
                 )
@@ -443,8 +463,14 @@ async def confirm_delete_subject(
         .select(
             "id, name, is_active"
         )
-        .eq("id", subject_id)
-        .eq("stage_id", stage_id)
+        .eq(
+            "id",
+            subject_id,
+        )
+        .eq(
+            "stage_id",
+            stage_id,
+        )
         .limit(1)
         .execute()
     )
@@ -471,8 +497,14 @@ async def confirm_delete_subject(
             .update({
                 "is_active": False,
             })
-            .eq("id", subject_id)
-            .eq("stage_id", stage_id)
+            .eq(
+                "id",
+                subject_id,
+            )
+            .eq(
+                "stage_id",
+                stage_id,
+            )
             .execute()
         )
 
@@ -564,23 +596,13 @@ async def admin_button(
     await query.answer()
 
     if query.data == "admin_announcements":
-        from bot.handlers.admin_notifications import (
-            admin_notifications,
+        await query.edit_message_text(
+            "📢 التبليغات\n\n"
+            "هذا القسم قيد الإنشاء."
         )
 
-        await admin_notifications(
-            update,
-            context,
+    elif query.data == "admin_settings":
+        await query.edit_message_text(
+            "⚙️ الإعدادات\n\n"
+            "هذا القسم قيد الإنشاء."
         )
-        return
-
-    if query.data == "admin_settings":
-        from bot.handlers.admin_settings import (
-            admin_settings,
-        )
-
-        await admin_settings(
-            update,
-            context,
-        )
-        return
