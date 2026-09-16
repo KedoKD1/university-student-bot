@@ -108,17 +108,38 @@ ADMIN_CACHE_TTL = 10
 ROLE_PERMISSION_CACHE_TTL = 30
 
 
-def clear_permission_cache(user_id=None):
+def clear_permission_cache(
+    user_id=None,
+):
     if user_id is None:
         _ADMIN_CACHE.clear()
         _ROLE_PERMISSION_CACHE.clear()
         return
 
-    _ADMIN_CACHE.pop(user_id, None)
-    _ROLE_PERMISSION_CACHE.pop(user_id, None)
+    admin = _ADMIN_CACHE.get(user_id)
+
+    _ADMIN_CACHE.pop(
+        user_id,
+        None,
+    )
+
+    if admin is not None:
+        _, admin_data = admin
+
+        if isinstance(admin_data, dict):
+            role = admin_data.get("role")
+
+            if role:
+                _ROLE_PERMISSION_CACHE.pop(
+                    role,
+                    None,
+                )
 
 
-def _get_cached(cache, key):
+def _get_cached(
+    cache,
+    key,
+):
     item = cache.get(key)
 
     if item is None:
@@ -127,13 +148,21 @@ def _get_cached(cache, key):
     expires_at, value = item
 
     if time.monotonic() >= expires_at:
-        cache.pop(key, None)
+        cache.pop(
+            key,
+            None,
+        )
         return None
 
     return value
 
 
-def _set_cached(cache, key, value, ttl):
+def _set_cached(
+    cache,
+    key,
+    value,
+    ttl,
+):
     cache[key] = (
         time.monotonic() + ttl,
         value,
@@ -144,7 +173,9 @@ def _set_cached(cache, key, value, ttl):
 # Get admin
 # ============================================================
 
-async def get_admin(user_id: int):
+async def get_admin(
+    user_id: int,
+):
     cached = _get_cached(
         _ADMIN_CACHE,
         user_id,
@@ -168,7 +199,11 @@ async def get_admin(user_id: int):
 
         admins = response.data or []
 
-        admin = admins[0] if admins else None
+        admin = (
+            admins[0]
+            if admins
+            else None
+        )
 
         _set_cached(
             _ADMIN_CACHE,
@@ -192,8 +227,12 @@ async def get_admin(user_id: int):
 # Get role
 # ============================================================
 
-async def get_role(user_id: int):
-    admin = await get_admin(user_id)
+async def get_role(
+    user_id: int,
+):
+    admin = await get_admin(
+        user_id
+    )
 
     if not admin:
         return None
@@ -210,16 +249,24 @@ async def get_role(user_id: int):
 # Is admin
 # ============================================================
 
-async def is_admin(user_id: int) -> bool:
-    return await get_admin(user_id) is not None
+async def is_admin(
+    user_id: int,
+) -> bool:
+    return await get_admin(
+        user_id
+    ) is not None
 
 
 # ============================================================
 # Is owner
 # ============================================================
 
-async def is_owner(user_id: int) -> bool:
-    role = await get_role(user_id)
+async def is_owner(
+    user_id: int,
+) -> bool:
+    role = await get_role(
+        user_id
+    )
 
     return role == ROLE_OWNER
 
@@ -228,7 +275,9 @@ async def is_owner(user_id: int) -> bool:
 # Get database permissions for role
 # ============================================================
 
-async def get_role_permissions(role: str):
+async def get_role_permissions(
+    role: str,
+):
     cached = _get_cached(
         _ROLE_PERMISSION_CACHE,
         role,
@@ -251,16 +300,22 @@ async def get_role_permissions(role: str):
         )
 
         for row in response.data or []:
-            permission_data = row.get("permissions")
+            permission_data = row.get(
+                "permissions"
+            )
 
             if isinstance(
                 permission_data,
                 dict,
             ):
-                name = permission_data.get("name")
+                name = permission_data.get(
+                    "name"
+                )
 
                 if name:
-                    permissions.add(name)
+                    permissions.add(
+                        name
+                    )
 
     except Exception as exc:
         print(
@@ -287,8 +342,9 @@ async def has_permission(
     user_id: int,
     permission: str,
 ) -> bool:
-
-    role = await get_role(user_id)
+    role = await get_role(
+        user_id
+    )
 
     if role is None:
         return False
@@ -296,14 +352,20 @@ async def has_permission(
     if role == ROLE_OWNER:
         return True
 
-    database_permissions = await get_role_permissions(role)
+    database_permissions = (
+        await get_role_permissions(
+            role
+        )
+    )
 
     if permission in database_permissions:
         return True
 
-    return permission in DEFAULT_ROLE_PERMISSIONS.get(
-        role,
-        set(),
+    return permission in (
+        DEFAULT_ROLE_PERMISSIONS.get(
+            role,
+            set(),
+        )
     )
 
 
@@ -315,7 +377,6 @@ async def require_permission(
     update: Update,
     permission: str,
 ) -> bool:
-
     user = update.effective_user
 
     if user is None:
@@ -455,13 +516,24 @@ CALLBACK_PERMISSIONS = {
     "remove_role": PERMISSION_MANAGE_ADMINS,
     "set_role": PERMISSION_MANAGE_ADMINS,
 
-    # Future sections
+    # Announcements
     "admin_announcements": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "admin_notify_new": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "admin_notify_audience": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "admin_notify_send": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "admin_notify_delete": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "admin_notify_cancel": PERMISSION_MANAGE_ANNOUNCEMENTS,
+
+    # Settings
     "admin_settings": PERMISSION_MANAGE_SETTINGS,
+    "admin_setting_edit": PERMISSION_MANAGE_SETTINGS,
+    "admin_setting_cancel": PERMISSION_MANAGE_SETTINGS,
 }
 
 
-def permission_for_callback(callback_data: str):
+def permission_for_callback(
+    callback_data: str,
+):
     if not callback_data:
         return None
 
