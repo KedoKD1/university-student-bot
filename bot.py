@@ -6,29 +6,35 @@ from telegram.ext import (
     MessageHandler,
     TypeHandler,
     ContextTypes,
+    ConversationHandler,
     filters,
 )
+
 from bot.database.client import supabase
+
 from bot.handlers.main_menu import (
     show_main_menu,
     main_menu_button,
     back_main,
 )
+
 from bot.handlers.search import (
     start_search,
     handle_search_text,
 )
+
 from bot.handlers.stages import (
     locked_stage_button,
-    show_stages,
     stage_button,
 )
+
 from bot.handlers.subjects import (
     back_to_stages,
     back_to_subjects,
     subject_button,
     subjects_page_button,
 )
+
 from bot.handlers.content import (
     back_to_content,
     file_button,
@@ -40,6 +46,7 @@ from bot.handlers.content import (
     show_all_drawings,
     study_item_button,
 )
+
 from bot.handlers.exam_dates import (
     show_exam_dates,
     exam_stage,
@@ -47,11 +54,13 @@ from bot.handlers.exam_dates import (
     exam_locked,
     exam_back,
 )
+
 from bot.handlers.admin import (
     admin_back,
     admin_button,
     admin_command,
 )
+
 from bot.handlers.admin_subjects import (
     admin_subjects,
     back_to_stage_subjects,
@@ -61,6 +70,7 @@ from bot.handlers.admin_subjects import (
     manage_subject,
     subject_conversation_handler,
 )
+
 from bot.handlers.admin_files import (
     admin_files,
     admin_file_stage,
@@ -76,6 +86,7 @@ from bot.handlers.admin_files import (
     confirm_delete_file,
     file_conversation_handler,
 )
+
 from bot.handlers.admin_summaries import (
     admin_summaries,
     admin_summary_stage,
@@ -91,6 +102,7 @@ from bot.handlers.admin_summaries import (
     confirm_delete_summary,
     summary_conversation_handler,
 )
+
 from bot.handlers.admin_drawings import (
     admin_drawings,
     admin_drawing_stage,
@@ -106,20 +118,24 @@ from bot.handlers.admin_drawings import (
     confirm_delete_drawing,
     drawing_conversation_handler,
 )
+
 from bot.handlers.schedules import (
     show_schedules,
     student_schedule_stage,
     locked_schedule,
 )
+
 from bot.handlers.admin_schedules import (
     admin_schedules,
     admin_schedule_stage,
     delete_schedule,
     schedule_conversation_handler,
 )
+
 from bot.handlers.grades import (
     grades_callback,
 )
+
 from bot.handlers.admin_grades import (
     admin_grades,
     admin_grade_stage,
@@ -131,6 +147,7 @@ from bot.handlers.admin_grades import (
     confirm_delete_grade,
     grade_conversation_handler,
 )
+
 from bot.handlers.admin_exam_dates import (
     admin_exams,
     admin_exam_stage,
@@ -156,6 +173,7 @@ from bot.handlers.admin_exam_dates import (
     cancel_exam,
     exam_conversation_handler,
 )
+
 from bot.handlers.admin_tools import (
     admin_tools,
     bot_status,
@@ -166,21 +184,38 @@ from bot.handlers.admin_tools import (
     set_role,
     role_conversation_handler,
 )
+
 from bot.handlers.bundle_descriptions import (
     bundle_descriptions,
     bundle_description_conversation_handler,
 )
+
+from bot.handlers.admin_notifications import (
+    admin_notifications,
+    notification_conversation_handler,
+    send_notification,
+    delete_notification,
+)
+
+from bot.handlers.admin_settings import (
+    admin_settings,
+    settings_conversation_handler,
+)
+
 from bot.handlers.user_tracking import (
     track_user,
 )
+
 from bot.utils.debug_logger import (
     configure_logging,
     log_update,
     global_error_handler,
 )
+
 from bot.utils.permission_guard import (
     permission_guard,
 )
+
 from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
@@ -190,6 +225,7 @@ from bot.utils.config import (
 # ============================================================
 # Search text handler
 # ============================================================
+
 async def search_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -206,6 +242,7 @@ async def search_text_handler(
 # ============================================================
 # Main
 # ============================================================
+
 def main():
     # ========================================================
     # Debug Logging
@@ -247,9 +284,6 @@ def main():
 
     # ========================================================
     # Global Error Handler
-    #
-    # Any unhandled exception inside Telegram handlers
-    # will be logged with its full traceback.
     # ========================================================
     application.add_error_handler(
         global_error_handler
@@ -257,8 +291,6 @@ def main():
 
     # ========================================================
     # Global Debug Update Logger
-    #
-    # Runs before permission guard and logs every update.
     # ========================================================
     application.add_handler(
         TypeHandler(
@@ -308,9 +340,6 @@ def main():
 
     # ========================================================
     # Admin Conversations
-    # IMPORTANT:
-    # Keep all ConversationHandlers before the generic
-    # text MessageHandler.
     # ========================================================
     application.add_handler(
         subject_conversation_handler()
@@ -348,12 +377,21 @@ def main():
         role_conversation_handler()
     )
 
+    application.add_handler(
+        notification_conversation_handler()
+    )
+
+    application.add_handler(
+        settings_conversation_handler()
+    )
+
     # ========================================================
     # Text Handler
     # ========================================================
     application.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
+            filters.TEXT
+            & ~filters.COMMAND,
             search_text_handler,
         ),
         group=0,
@@ -1079,6 +1117,40 @@ def main():
     )
 
     # ========================================================
+    # Notifications
+    # ========================================================
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_notifications,
+            pattern=r"^admin_announcements$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            send_notification,
+            pattern=r"^admin_notify_send$",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            delete_notification,
+            pattern=r"^admin_notify_delete$",
+        )
+    )
+
+    # ========================================================
+    # Settings main section
+    # ========================================================
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_settings,
+            pattern=r"^admin_settings$",
+        )
+    )
+
+    # ========================================================
     # Admin Main Menu
     # ========================================================
     application.add_handler(
@@ -1087,9 +1159,7 @@ def main():
             pattern=(
                 r"^(admin:|"
                 r"admin_delete_subject:|"
-                r"admin_confirm_delete_subject:|"
-                r"admin_announcements$|"
-                r"admin_settings$)"
+                r"admin_confirm_delete_subject:)"
             ),
         )
     )
