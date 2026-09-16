@@ -13,6 +13,10 @@ MAX_RESULTS_PER_TYPE = 5
 MAX_TOTAL_RESULTS = 20
 
 
+# ============================================================
+# Search Keyboard
+# ============================================================
+
 def search_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
@@ -29,6 +33,10 @@ def search_keyboard(user_id):
         ],
     ])
 
+
+# ============================================================
+# Search Results Keyboard
+# ============================================================
 
 def result_keyboard(results, user_id):
     keyboard = []
@@ -87,6 +95,10 @@ def result_keyboard(results, user_id):
     return InlineKeyboardMarkup(keyboard)
 
 
+# ============================================================
+# Escape Search Text
+# ============================================================
+
 def _escape_search_text(text):
     return (
         text
@@ -96,6 +108,10 @@ def _escape_search_text(text):
         .replace(",", "\\,")
     )
 
+
+# ============================================================
+# Start Search
+# ============================================================
 
 async def start_search(
     update: Update,
@@ -132,6 +148,10 @@ async def start_search(
     )
 
 
+# ============================================================
+# Handle Search Text
+# ============================================================
+
 async def handle_search_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -141,20 +161,6 @@ async def handle_search_text(
 
     if update.effective_user is None:
         return False
-
-    # ========================================================
-    # Quiz text answers
-    # ========================================================
-
-    from bot.handlers.quizzes import handle_quiz_text
-
-    quiz_handled = await handle_quiz_text(
-        update,
-        context,
-    )
-
-    if quiz_handled:
-        return True
 
     # ========================================================
     # Search
@@ -206,6 +212,7 @@ async def handle_search_text(
         return True
 
     context.user_data["search_mode"] = False
+
     context.user_data.pop(
         "search_owner_id",
         None,
