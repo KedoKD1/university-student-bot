@@ -34,13 +34,17 @@ def _settings_keyboard(
         [
             InlineKeyboardButton(
                 text=notification_text,
-                callback_data=f"main:settings:notifications:{user_id}",
+                callback_data=(
+                    f"main:settings:notifications:{user_id}"
+                ),
             )
         ],
         [
             InlineKeyboardButton(
                 text="🔄 إعادة ضبط الإعدادات",
-                callback_data=f"main:settings:reset:{user_id}",
+                callback_data=(
+                    f"main:settings:reset:{user_id}"
+                ),
             )
         ],
         [
@@ -251,8 +255,6 @@ async def show_student_settings(
                 exc,
             )
 
-    await query.answer()
-
     await query.edit_message_text(
         "⚙️ إعدادات الطالب\n\n"
         f"🎓 المرحلة الحالية: {stage_text}\n"
@@ -315,8 +317,6 @@ async def show_settings_stages(
             show_alert=True,
         )
         return
-
-    await query.answer()
 
     await query.edit_message_text(
         "🎓 تغيير المرحلة\n\n"
@@ -535,14 +535,11 @@ async def reset_student_settings(
             InlineKeyboardButton(
                 text="❌ إلغاء",
                 callback_data=(
-                    f"main:settings:back:"
-                    f"{user_id}"
+                    f"main:settings:back:{user_id}"
                 ),
             ),
         ],
     ])
-
-    await query.answer()
 
     await query.edit_message_text(
         "⚠️ إعادة ضبط الإعدادات\n\n"
@@ -626,6 +623,49 @@ async def student_settings_callback(
 
     parts = query.data.split(":")
 
+    # --------------------------------------------------------
+    # Opening Settings:
+    #
+    # main:settings:<user_id>
+    # --------------------------------------------------------
+
+    if (
+        len(parts) == 3
+        and parts[0] == "main"
+        and parts[1] == "settings"
+    ):
+        owner_id = parts[2]
+
+        try:
+            owner_id = int(owner_id)
+
+        except (TypeError, ValueError):
+            await query.answer(
+                "❌ المستخدم غير صالح.",
+                show_alert=True,
+            )
+            return
+
+        if query.from_user.id != owner_id:
+            await query.answer(
+                "⛔ هذا الاختيار مو إلك.\n"
+                "استخدم /start حتى تحصل على قائمتك الخاصة.",
+                show_alert=True,
+            )
+            return
+
+        await query.answer()
+
+        await show_student_settings(
+            update,
+            context,
+        )
+        return
+
+    # --------------------------------------------------------
+    # Settings Actions
+    # --------------------------------------------------------
+
     if len(parts) < 4:
         await query.answer(
             "❌ اختيار غير صالح.",
@@ -643,7 +683,7 @@ async def student_settings_callback(
     owner_id = parts[-1]
 
     try:
-        owner_id_int = int(owner_id)
+        owner_id = int(owner_id)
 
     except (TypeError, ValueError):
         await query.answer(
@@ -652,7 +692,7 @@ async def student_settings_callback(
         )
         return
 
-    if query.from_user.id != owner_id_int:
+    if query.from_user.id != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.\n"
             "استخدم /start حتى تحصل على قائمتك الخاصة.",
@@ -663,6 +703,8 @@ async def student_settings_callback(
     action = parts[2]
 
     if action == "stage" and len(parts) == 4:
+        await query.answer()
+
         await show_settings_stages(
             update,
             context,
@@ -698,6 +740,8 @@ async def student_settings_callback(
         return
 
     if action == "back" and len(parts) == 4:
+        await query.answer()
+
         await back_to_student_settings(
             update,
             context,
