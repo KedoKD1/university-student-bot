@@ -14,13 +14,6 @@ from bot.handlers.main_menu import (
     main_menu_button,
     back_main,
 )
-from bot.handlers.quizzes import (
-    quiz_callback,
-    handle_quiz_text,
-)
-from bot.handlers.leaderboard import (
-    leaderboard_callback,
-)
 from bot.handlers.search import (
     start_search,
     handle_search_text,
@@ -191,24 +184,12 @@ from bot.utils.config import (
     validate_config,
 )
 # ============================================================
-# Search + Quiz text handler
+# Search text handler
 # ============================================================
 async def search_text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    # --------------------------------------------------------
-    # Quiz text answers
-    # --------------------------------------------------------
-    handled = await handle_quiz_text(
-        update,
-        context,
-    )
-    if handled:
-        return
-    # --------------------------------------------------------
-    # Search text
-    # --------------------------------------------------------
     handled = await handle_search_text(
         update,
         context,
@@ -382,29 +363,6 @@ def main():
         )
     )
     # ========================================================
-    # Quizzes
-    # IMPORTANT:
-    # This handler must exist for all quiz callbacks.
-    # ========================================================
-    application.add_handler(
-        CallbackQueryHandler(
-            quiz_callback,
-            pattern=r"^quiz:",
-        )
-    )
-    # ========================================================
-    # Leaderboard
-    # IMPORTANT:
-    # Must be inside main() because application
-    # is created locally above.
-    # ========================================================
-    application.add_handler(
-        CallbackQueryHandler(
-            leaderboard_callback,
-            pattern=r"^leaderboard:",
-        )
-    )
-    # ========================================================
     # Main Menu
     # ========================================================
     application.add_handler(
@@ -430,8 +388,8 @@ def main():
     )
     application.add_handler(
         CallbackQueryHandler(
-        locked_stage_button,
-        pattern=r"^locked:",
+            locked_stage_button,
+            pattern=r"^locked:",
         )
     )
     # ========================================================
