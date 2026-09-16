@@ -14,7 +14,13 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+
+from bot.utils.permissions import (
+    is_admin,
+    is_owner,
+    get_admin,
+    clear_permission_cache,
+)
 
 
 ROLE_USERNAME = 10
@@ -27,32 +33,9 @@ ROLE_NAMES = {
 }
 
 
-async def get_admin(user_id):
-    response = (
-        supabase
-        .table("admins")
-        .select(
-            "id, telegram_id, role, is_active"
-        )
-        .eq("telegram_id", user_id)
-        .eq("is_active", True)
-        .limit(1)
-        .execute()
-    )
-
-    rows = response.data or []
-
-    return rows[0] if rows else None
-
-
-async def is_owner(user_id):
-    admin = await get_admin(user_id)
-
-    return (
-        admin is not None
-        and admin.get("role") == "owner"
-    )
-
+# ============================================================
+# Tools keyboard
+# ============================================================
 
 def tools_keyboard():
     return InlineKeyboardMarkup([
@@ -83,6 +66,10 @@ def tools_keyboard():
     ])
 
 
+# ============================================================
+# Admin tools
+# ============================================================
+
 async def admin_tools(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -108,6 +95,10 @@ async def admin_tools(
     )
 
 
+# ============================================================
+# Count rows
+# ============================================================
+
 def count_rows(
     table,
     active_only=False,
@@ -130,6 +121,7 @@ def count_rows(
     try:
         result = builder.execute()
         return result.count or 0
+
     except Exception as exc:
         print(
             f"COUNT ERROR [{table}]:",
@@ -138,6 +130,10 @@ def count_rows(
         )
         return 0
 
+
+# ============================================================
+# Bot status
+# ============================================================
 
 async def bot_status(
     update: Update,
@@ -157,7 +153,9 @@ async def bot_status(
 
     await query.answer()
 
-    users = count_rows("telegram_users")
+    users = count_rows(
+        "telegram_users"
+    )
 
     admins = count_rows(
         "admins",
@@ -198,7 +196,10 @@ async def bot_status(
             supabase
             .table("admins")
             .select("role")
-            .eq("is_active", True)
+            .eq(
+                "is_active",
+                True,
+            )
             .execute()
         )
 
@@ -254,6 +255,10 @@ async def bot_status(
     )
 
 
+# ============================================================
+# Admin roles
+# ============================================================
+
 async def admin_roles(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -263,7 +268,9 @@ async def admin_roles(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(query.from_user.id):
+    if not await is_owner(
+        query.from_user.id
+    ):
         await query.answer(
             "⛔ هذا الخيار للـ Owner فقط.",
             show_alert=True,
@@ -278,7 +285,10 @@ async def admin_roles(
         .select(
             "id, telegram_id, role, is_active"
         )
-        .eq("is_active", True)
+        .eq(
+            "is_active",
+            True,
+        )
         .order("id")
         .execute()
     )
@@ -368,6 +378,10 @@ async def admin_roles(
     )
 
 
+# ============================================================
+# Start adding role
+# ============================================================
+
 async def role_add_start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -386,6 +400,17 @@ async def role_add_start(
         )
         return ConversationHandler.END
 
+    # Clear any stale data from a previous role operation.
+    context.user_data.pop(
+        "role_target_id",
+        None,
+    )
+
+    context.user_data.pop(
+        "role_target_username",
+        None,
+    )
+
     await query.answer()
 
     await query.edit_message_text(
@@ -399,6 +424,10 @@ async def role_add_start(
 
     return ROLE_USERNAME
 
+
+# ============================================================
+# Receive username
+# ============================================================
 
 async def role_receive_username(
     update: Update,
@@ -482,6 +511,55 @@ async def role_receive_username(
         if part
     ).strip()
 
+    # Never allow creating/changing an owner through
+    # the normal role assignment flow.
+    try:
+        existing_owner = (
+            supabase
+            .table("admins")
+            .select(
+                "id, role, is_active"
+            )
+            .eq(
+                "telegram_id",
+                target_id,
+            )
+            .eq(
+                "is_active",
+                True,
+            )
+            .limit(1)
+            .execute()
+        )
+
+        existing_rows = (
+            existing_owner.data or []
+        )
+
+        if (
+            existing_rows
+            and existing_rows[0].get("role")
+            == "owner"
+        ):
+            await update.message.reply_text(
+                "⛔ لا يمكن تعديل رتبة Owner."
+            )
+
+            return ConversationHandler.END
+
+    except Exception as exc:
+        print(
+            "ROLE TARGET VALIDATION ERROR:",
+            type(exc).__name__,
+            exc,
+        )
+
+        await update.message.reply_text(
+            "❌ تعذر التحقق من رتبة المستخدم."
+        )
+
+        return ConversationHandler.END
+
     context.user_data[
         "role_target_id"
     ] = target_id
@@ -517,7 +595,7 @@ async def role_receive_username(
             [
                 InlineKeyboardButton(
                     "❌ إلغاء",
-                    callback_data="cancel_role",
+                    callback_data="admin_roles",
                 )
             ],
         ]),
@@ -525,6 +603,10 @@ async def role_receive_username(
 
     return ConversationHandler.END
 
+
+# ============================================================
+# Set role
+# ============================================================
 
 async def set_role(
     update: Update,
@@ -562,16 +644,37 @@ async def set_role(
         )
         return
 
-    role = query.data.split(
+    parts = query.data.split(
         ":",
         1,
-    )[1]
+    )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ رتبة غير صحيحة.",
+            show_alert=True,
+        )
+        return
+
+    role = parts[1]
+
+    if role not in {
+        "admin",
+        "moderator",
+    }:
+        await query.answer(
+            "❌ لا يمكن تعيين هذه الرتبة.",
+            show_alert=True,
+        )
+        return
 
     try:
         existing = (
             supabase
             .table("admins")
-            .select("id")
+            .select(
+                "id, role, is_active"
+            )
             .eq(
                 "telegram_id",
                 target_id,
@@ -583,6 +686,17 @@ async def set_role(
         rows = existing.data or []
 
         if rows:
+            current_role = rows[0].get(
+                "role"
+            )
+
+            if current_role == "owner":
+                await query.answer(
+                    "⛔ لا يمكن تعديل رتبة Owner.",
+                    show_alert=True,
+                )
+                return
+
             (
                 supabase
                 .table("admins")
@@ -623,6 +737,11 @@ async def set_role(
 
         return
 
+    # The target's role may have been cached.
+    clear_permission_cache(
+        target_id
+    )
+
     context.user_data.pop(
         "role_target_id",
         None,
@@ -648,6 +767,10 @@ async def set_role(
     )
 
 
+# ============================================================
+# Manage role
+# ============================================================
+
 async def role_manage(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -666,10 +789,19 @@ async def role_manage(
         )
         return
 
-    admin_id = query.data.split(
+    parts = query.data.split(
         ":",
         1,
-    )[1]
+    )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ بيانات غير صحيحة.",
+            show_alert=True,
+        )
+        return
+
+    admin_id = parts[1]
 
     response = (
         supabase
@@ -677,7 +809,10 @@ async def role_manage(
         .select(
             "id, telegram_id, role"
         )
-        .eq("id", admin_id)
+        .eq(
+            "id",
+            admin_id,
+        )
         .limit(1)
         .execute()
     )
@@ -723,13 +858,35 @@ async def role_manage(
         else str(admin["telegram_id"])
     )
 
+    current_role = admin.get(
+        "role"
+    )
+
     await query.answer()
+
+    # Owner can be viewed but never modified.
+    if current_role == "owner":
+        await query.edit_message_text(
+            "👤 إدارة المشرف\n\n"
+            f"👤 المستخدم: {identity}\n"
+            "🏷️ الرتبة: 👑 Owner\n\n"
+            "🔒 لا يمكن تعديل أو إزالة رتبة Owner.",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "⬅️ رجوع",
+                        callback_data="admin_roles",
+                    )
+                ],
+            ]),
+        )
+        return
 
     await query.edit_message_text(
         "👤 إدارة المشرف\n\n"
         f"👤 المستخدم: {identity}\n"
         f"🏷️ الرتبة: "
-        f"{ROLE_NAMES.get(admin['role'], admin['role'])}\n\n"
+        f"{ROLE_NAMES.get(current_role, current_role)}\n\n"
         "اختر العملية:",
         reply_markup=InlineKeyboardMarkup([
             [
@@ -769,6 +926,10 @@ async def role_manage(
     )
 
 
+# ============================================================
+# Change role
+# ============================================================
+
 async def change_role(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -789,10 +950,59 @@ async def change_role(
 
     parts = query.data.split(":")
 
+    if len(parts) != 3:
+        await query.answer(
+            "❌ بيانات الرتبة غير صحيحة.",
+            show_alert=True,
+        )
+        return
+
     admin_id = parts[1]
     role = parts[2]
 
+    if role not in {
+        "admin",
+        "moderator",
+    }:
+        await query.answer(
+            "❌ لا يمكن تعيين هذه الرتبة.",
+            show_alert=True,
+        )
+        return
+
     try:
+        existing = (
+            supabase
+            .table("admins")
+            .select(
+                "id, telegram_id, role"
+            )
+            .eq(
+                "id",
+                admin_id,
+            )
+            .limit(1)
+            .execute()
+        )
+
+        rows = existing.data or []
+
+        if not rows:
+            await query.answer(
+                "❌ المشرف غير موجود.",
+                show_alert=True,
+            )
+            return
+
+        admin = rows[0]
+
+        if admin.get("role") == "owner":
+            await query.answer(
+                "⛔ لا يمكن تعديل رتبة Owner.",
+                show_alert=True,
+            )
+            return
+
         (
             supabase
             .table("admins")
@@ -807,9 +1017,14 @@ async def change_role(
             .execute()
         )
 
+        clear_permission_cache(
+            admin["telegram_id"]
+        )
+
     except Exception as exc:
         print(
             "ROLE CHANGE ERROR:",
+            type(exc).__name__,
             exc,
         )
 
@@ -831,6 +1046,10 @@ async def change_role(
     )
 
 
+# ============================================================
+# Remove role
+# ============================================================
+
 async def remove_role(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -849,12 +1068,53 @@ async def remove_role(
         )
         return
 
-    admin_id = query.data.split(
+    parts = query.data.split(
         ":",
         1,
-    )[1]
+    )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ بيانات غير صحيحة.",
+            show_alert=True,
+        )
+        return
+
+    admin_id = parts[1]
 
     try:
+        existing = (
+            supabase
+            .table("admins")
+            .select(
+                "id, telegram_id, role"
+            )
+            .eq(
+                "id",
+                admin_id,
+            )
+            .limit(1)
+            .execute()
+        )
+
+        rows = existing.data or []
+
+        if not rows:
+            await query.answer(
+                "❌ المشرف غير موجود.",
+                show_alert=True,
+            )
+            return
+
+        admin = rows[0]
+
+        if admin.get("role") == "owner":
+            await query.answer(
+                "⛔ لا يمكن إزالة رتبة Owner.",
+                show_alert=True,
+            )
+            return
+
         (
             supabase
             .table("admins")
@@ -868,9 +1128,14 @@ async def remove_role(
             .execute()
         )
 
+        clear_permission_cache(
+            admin["telegram_id"]
+        )
+
     except Exception as exc:
         print(
             "ROLE REMOVE ERROR:",
+            type(exc).__name__,
             exc,
         )
 
@@ -891,6 +1156,10 @@ async def remove_role(
         context,
     )
 
+
+# ============================================================
+# Cancel role operation
+# ============================================================
 
 async def cancel_role(
     update: Update,
@@ -913,6 +1182,10 @@ async def cancel_role(
 
     return ConversationHandler.END
 
+
+# ============================================================
+# Role conversation handler
+# ============================================================
 
 def role_conversation_handler():
     return ConversationHandler(
