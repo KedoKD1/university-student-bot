@@ -25,6 +25,7 @@ from bot.handlers.search import (
 
 from bot.handlers.stages import (
     locked_stage_button,
+    show_stages,
     stage_button,
 )
 
@@ -191,14 +192,10 @@ from bot.handlers.bundle_descriptions import (
 )
 
 from bot.handlers.admin_notifications import (
-    admin_notifications,
     notification_conversation_handler,
-    send_notification,
-    delete_notification,
 )
 
 from bot.handlers.admin_settings import (
-    admin_settings,
     settings_conversation_handler,
 )
 
@@ -244,9 +241,6 @@ async def search_text_handler(
 # ============================================================
 
 def main():
-    # ========================================================
-    # Debug Logging
-    # ========================================================
     configure_logging()
 
     validate_config()
@@ -256,9 +250,6 @@ def main():
             "BOT_TOKEN is not configured."
         )
 
-    # ========================================================
-    # Supabase Connection Test
-    # ========================================================
     response = (
         supabase
         .table("stages")
@@ -272,9 +263,6 @@ def main():
         f"{response.data}"
     )
 
-    # ========================================================
-    # Telegram Application
-    # ========================================================
     application = (
         Application
         .builder()
@@ -282,16 +270,14 @@ def main():
         .build()
     )
 
-    # ========================================================
-    # Global Error Handler
-    # ========================================================
     application.add_error_handler(
         global_error_handler
     )
 
     # ========================================================
-    # Global Debug Update Logger
+    # Global logging
     # ========================================================
+
     application.add_handler(
         TypeHandler(
             Update,
@@ -301,8 +287,9 @@ def main():
     )
 
     # ========================================================
-    # Permission Guard
+    # Global permission guard
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             permission_guard,
@@ -311,8 +298,9 @@ def main():
     )
 
     # ========================================================
-    # Telegram User Tracking
+    # User / chat tracking
     # ========================================================
+
     application.add_handler(
         TypeHandler(
             Update,
@@ -324,6 +312,7 @@ def main():
     # ========================================================
     # Commands
     # ========================================================
+
     application.add_handler(
         CommandHandler(
             "start",
@@ -339,8 +328,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Conversations
+    # Existing admin conversations
     # ========================================================
+
     application.add_handler(
         subject_conversation_handler()
     )
@@ -377,29 +367,38 @@ def main():
         role_conversation_handler()
     )
 
+    # ========================================================
+    # Notifications
+    # ========================================================
+
     application.add_handler(
         notification_conversation_handler()
     )
+
+    # ========================================================
+    # Settings
+    # ========================================================
 
     application.add_handler(
         settings_conversation_handler()
     )
 
     # ========================================================
-    # Text Handler
+    # Generic text
     # ========================================================
+
     application.add_handler(
         MessageHandler(
-            filters.TEXT
-            & ~filters.COMMAND,
+            filters.TEXT & ~filters.COMMAND,
             search_text_handler,
         ),
         group=0,
     )
 
     # ========================================================
-    # Student Schedule
+    # Student schedules
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             show_schedules,
@@ -422,8 +421,9 @@ def main():
     )
 
     # ========================================================
-    # Student Exam Dates
+    # Student exams
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             show_exam_dates,
@@ -460,8 +460,9 @@ def main():
     )
 
     # ========================================================
-    # Search Button
+    # Search
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             start_search,
@@ -470,8 +471,9 @@ def main():
     )
 
     # ========================================================
-    # Main Menu
+    # Main menu
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             main_menu_button,
@@ -489,6 +491,7 @@ def main():
     # ========================================================
     # Stages
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             stage_button,
@@ -506,6 +509,7 @@ def main():
     # ========================================================
     # Subjects
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             subjects_page_button,
@@ -535,8 +539,9 @@ def main():
     )
 
     # ========================================================
-    # Student Files
+    # Files
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             show_files,
@@ -566,8 +571,9 @@ def main():
     )
 
     # ========================================================
-    # Student Summaries
+    # Summaries
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             show_all_summaries,
@@ -590,8 +596,9 @@ def main():
     )
 
     # ========================================================
-    # Student Drawings
+    # Drawings
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             show_all_drawings,
@@ -614,8 +621,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Subjects
+    # Admin subjects
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_subjects,
@@ -659,8 +667,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Files
+    # Admin files
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_files,
@@ -746,8 +755,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Summaries
+    # Admin summaries
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_summaries,
@@ -833,8 +843,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Drawings
+    # Admin drawings
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_drawings,
@@ -920,8 +931,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Schedules
+    # Admin schedules
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_schedules,
@@ -944,8 +956,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Grades
+    # Admin grades
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_grades,
@@ -1003,8 +1016,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Exam Dates
+    # Admin exams
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_exams,
@@ -1055,8 +1069,9 @@ def main():
     )
 
     # ========================================================
-    # Admin Tools
+    # Admin tools
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_tools,
@@ -1107,8 +1122,9 @@ def main():
     )
 
     # ========================================================
-    # Bundle Descriptions
+    # Bundle descriptions
     # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             bundle_descriptions,
@@ -1117,42 +1133,9 @@ def main():
     )
 
     # ========================================================
-    # Notifications
+    # Generic admin callbacks
     # ========================================================
-    application.add_handler(
-        CallbackQueryHandler(
-            admin_notifications,
-            pattern=r"^admin_announcements$",
-        )
-    )
 
-    application.add_handler(
-        CallbackQueryHandler(
-            send_notification,
-            pattern=r"^admin_notify_send$",
-        )
-    )
-
-    application.add_handler(
-        CallbackQueryHandler(
-            delete_notification,
-            pattern=r"^admin_notify_delete$",
-        )
-    )
-
-    # ========================================================
-    # Settings main section
-    # ========================================================
-    application.add_handler(
-        CallbackQueryHandler(
-            admin_settings,
-            pattern=r"^admin_settings$",
-        )
-    )
-
-    # ========================================================
-    # Admin Main Menu
-    # ========================================================
     application.add_handler(
         CallbackQueryHandler(
             admin_button,
@@ -1164,6 +1147,10 @@ def main():
         )
     )
 
+    # ========================================================
+    # Admin back
+    # ========================================================
+
     application.add_handler(
         CallbackQueryHandler(
             admin_back,
@@ -1172,8 +1159,9 @@ def main():
     )
 
     # ========================================================
-    # Run Bot
+    # Run
     # ========================================================
+
     print(
         "University Student Bot is running..."
     )
