@@ -364,6 +364,8 @@ CALLBACK_PERMISSIONS = {
     "manage_subject": PERMISSION_MANAGE_SUBJECTS,
     "disable_subject": PERMISSION_MANAGE_SUBJECTS,
     "enable_subject": PERMISSION_MANAGE_SUBJECTS,
+    "admin_delete_subject": PERMISSION_MANAGE_SUBJECTS,
+    "admin_confirm_delete_subject": PERMISSION_MANAGE_SUBJECTS,
 
     # Files
     "admin_files": PERMISSION_MANAGE_FILES,
