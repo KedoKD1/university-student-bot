@@ -33,16 +33,12 @@ from bot.utils.permissions import (
 # Admin permission snapshot
 # ============================================================
 
-async def get_admin_permissions(user_id: int):
-    """
-    تحميل بيانات الأدمن وصلاحياته بأقل عدد ممكن
-    من استعلامات Supabase.
-
-    يتم الاعتماد على نظام الـ cache الموجود في
-    permissions.py.
-    """
-
-    admin = await get_admin(user_id)
+async def get_admin_permissions(
+    user_id: int,
+):
+    admin = await get_admin(
+        user_id
+    )
 
     if not admin:
         return None, set()
@@ -72,8 +68,10 @@ async def get_admin_permissions(user_id: int):
         )
     )
 
-    database_permissions = await get_role_permissions(
-        role
+    database_permissions = (
+        await get_role_permissions(
+            role
+        )
     )
 
     if database_permissions:
@@ -88,163 +86,33 @@ async def get_admin_permissions(user_id: int):
 # Admin check
 # ============================================================
 
-async def is_admin_user(user_id: int) -> bool:
-    """
-    فحص الأدمن باستخدام الـ cache الموحد.
-    """
-
-    return await is_admin(user_id)
+async def is_admin_user(
+    user_id: int,
+) -> bool:
+    return await is_admin(
+        user_id
+    )
 
 
 # ============================================================
 # Admin keyboard
 # ============================================================
 
-async def admin_keyboard(user_id: int):
-    """
-    بناء لوحة الإدارة من Snapshot واحد للصلاحيات.
-
-    لا يتم تنفيذ has_permission() لكل زر،
-    وبالتالي لا يتم إرسال استعلام منفصل إلى Supabase
-    لكل Permission.
-    """
-
-    admin, permissions = await get_admin_permissions(
-        user_id
+async def admin_keyboard(
+    user_id: int,
+):
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
     )
 
     if admin is None:
         return InlineKeyboardMarkup([])
 
-    keyboard = []
-
-    # --------------------------------------------------------
-    # Subjects
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_SUBJECTS in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📚 إدارة المواد",
-                callback_data="admin_subjects",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Files
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_FILES in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📄 إدارة الملفات",
-                callback_data="admin_files",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Summaries
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_SUMMARIES in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📝 إدارة الملخصات",
-                callback_data="admin_summaries",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Drawings
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_DRAWINGS in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="🎨 إدارة الرسومات",
-                callback_data="admin_drawings",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Schedules
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_SCHEDULES in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📅 إدارة الجداول",
-                callback_data="admin_schedules",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Grades
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_GRADES in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📝 إدارة الدرجات",
-                callback_data="admin_grades",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Exam dates
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_EXAMS in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📋 مواعيد الامتحانات",
-                callback_data="admin_exams",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Admin tools
-    # --------------------------------------------------------
-
-    has_tools = (
-        PERMISSION_VIEW_STATISTICS in permissions
-        or PERMISSION_MANAGE_ADMINS in permissions
-        or PERMISSION_MANAGE_DESCRIPTIONS in permissions
+    return await admin_keyboard_from_permissions(
+        permissions
     )
-
-    if has_tools:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="🧰 أدوات الإدارة",
-                callback_data="admin_tools",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Announcements
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_ANNOUNCEMENTS in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="📢 الإعلانات",
-                callback_data="admin_announcements",
-            )
-        ])
-
-    # --------------------------------------------------------
-    # Settings
-    # --------------------------------------------------------
-
-    if PERMISSION_MANAGE_SETTINGS in permissions:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="⚙️ الإعدادات",
-                callback_data="admin_settings",
-            )
-        ])
-
-    return InlineKeyboardMarkup(keyboard)
 
 
 # ============================================================
@@ -263,9 +131,10 @@ async def admin_command(
 
     user_id = update.effective_user.id
 
-    # تحميل الأدمن والصلاحيات مرة واحدة.
-    admin, permissions = await get_admin_permissions(
-        user_id
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
     )
 
     if admin is None:
@@ -275,8 +144,10 @@ async def admin_command(
         )
         return
 
-    keyboard = await admin_keyboard_from_permissions(
-        permissions
+    keyboard = (
+        await admin_keyboard_from_permissions(
+            permissions
+        )
     )
 
     await update.message.reply_text(
@@ -288,7 +159,7 @@ async def admin_command(
 
 
 # ============================================================
-# Build keyboard from existing permission snapshot
+# Build keyboard
 # ============================================================
 
 async def admin_keyboard_from_permissions(
@@ -369,7 +240,7 @@ async def admin_keyboard_from_permissions(
     if PERMISSION_MANAGE_ANNOUNCEMENTS in permissions:
         keyboard.append([
             InlineKeyboardButton(
-                text="📢 الإعلانات",
+                text="📢 التبليغات",
                 callback_data="admin_announcements",
             )
         ])
@@ -382,7 +253,9 @@ async def admin_keyboard_from_permissions(
             )
         ])
 
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(
+        keyboard
+    )
 
 
 # ============================================================
@@ -403,10 +276,10 @@ async def admin_back(
 
     user_id = query.from_user.id
 
-    # Snapshot واحد بدل فحص is_admin ثم بناء
-    # keyboard بفحوصات إضافية.
-    admin, permissions = await get_admin_permissions(
-        user_id
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
     )
 
     if admin is None:
@@ -418,8 +291,10 @@ async def admin_back(
 
     await query.answer()
 
-    keyboard = await admin_keyboard_from_permissions(
-        permissions
+    keyboard = (
+        await admin_keyboard_from_permissions(
+            permissions
+        )
     )
 
     await query.edit_message_text(
@@ -513,7 +388,7 @@ async def delete_subject(
                 InlineKeyboardButton(
                     text="❌ إلغاء",
                     callback_data=(
-                        "manage_subject:"
+                        f"manage_subject:"
                         f"{subject_id}:{stage_id}"
                     ),
                 )
@@ -656,7 +531,9 @@ async def admin_button(
 
     user_id = query.from_user.id
 
-    admin = await get_admin(user_id)
+    admin = await get_admin(
+        user_id
+    )
 
     if admin is None:
         await query.answer(
@@ -687,13 +564,23 @@ async def admin_button(
     await query.answer()
 
     if query.data == "admin_announcements":
-        await query.edit_message_text(
-            "📢 الإعلانات\n\n"
-            "هذا القسم قيد الإنشاء."
+        from bot.handlers.admin_notifications import (
+            admin_notifications,
         )
 
-    elif query.data == "admin_settings":
-        await query.edit_message_text(
-            "⚙️ الإعدادات\n\n"
-            "هذا القسم قيد الإنشاء."
+        await admin_notifications(
+            update,
+            context,
         )
+        return
+
+    if query.data == "admin_settings":
+        from bot.handlers.admin_settings import (
+            admin_settings,
+        )
+
+        await admin_settings(
+            update,
+            context,
+        )
+        return
