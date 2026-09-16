@@ -185,8 +185,6 @@ from bot.utils.config import (
     BOT_TOKEN,
     validate_config,
 )
-
-
 # ============================================================
 # Search text handler
 # ============================================================
@@ -200,21 +198,22 @@ async def search_text_handler(
     )
     if handled:
         return
-
-
 # ============================================================
 # Main
 # ============================================================
 def main():
+    # ========================================================
+    # Debug Logging
+    # ========================================================
     configure_logging()
-
     validate_config()
-    
     if not BOT_TOKEN:
         raise ValueError(
             "BOT_TOKEN is not configured."
         )
-
+    # ========================================================
+    # Supabase Connection Test
+    # ========================================================
     response = (
         supabase
         .table("stages")
@@ -222,19 +221,40 @@ def main():
         .limit(1)
         .execute()
     )
-
     print(
         f"Supabase connection successful: "
         f"{response.data}"
     )
-
+    # ========================================================
+    # Telegram Application
+    # ========================================================
     application = (
         Application
         .builder()
         .token(BOT_TOKEN)
         .build()
     )
-
+    # ========================================================
+    # Global Error Handler
+    #
+    # Any unhandled exception inside Telegram handlers
+    # will be logged with its full traceback.
+    # ========================================================
+    application.add_error_handler(
+        global_error_handler
+    )
+    # ========================================================
+    # Global Debug Update Logger
+    #
+    # Runs before permission guard and logs every update.
+    # ========================================================
+    application.add_handler(
+        TypeHandler(
+            Update,
+            log_update,
+        ),
+        group=-3,
+    )
     # ========================================================
     # Permission Guard
     # ========================================================
@@ -244,7 +264,6 @@ def main():
         ),
         group=-2,
     )
-
     # ========================================================
     # Telegram User Tracking
     # ========================================================
@@ -255,7 +274,6 @@ def main():
         ),
         group=-1,
     )
-
     # ========================================================
     # Commands
     # ========================================================
@@ -265,14 +283,12 @@ def main():
             show_main_menu,
         )
     )
-
     application.add_handler(
         CommandHandler(
             "admin",
             admin_command,
         )
     )
-
     # ========================================================
     # Admin Conversations
     # IMPORTANT:
@@ -282,39 +298,30 @@ def main():
     application.add_handler(
         subject_conversation_handler()
     )
-
     application.add_handler(
         file_conversation_handler()
     )
-
     application.add_handler(
         summary_conversation_handler()
     )
-
     application.add_handler(
         drawing_conversation_handler()
     )
-
     application.add_handler(
         schedule_conversation_handler()
     )
-
     application.add_handler(
         grade_conversation_handler()
     )
-
     application.add_handler(
         exam_conversation_handler()
     )
-
     application.add_handler(
         bundle_description_conversation_handler()
     )
-
     application.add_handler(
         role_conversation_handler()
     )
-
     # ========================================================
     # Text Handler
     # ========================================================
@@ -325,7 +332,6 @@ def main():
         ),
         group=0,
     )
-
     # ========================================================
     # Student Schedule
     # ========================================================
@@ -335,21 +341,18 @@ def main():
             pattern=r"^main:schedule:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             student_schedule_stage,
             pattern=r"^student_schedule_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             locked_schedule,
             pattern=r"^locked_schedule:",
         )
     )
-
     # ========================================================
     # Student Exam Dates
     # ========================================================
@@ -359,35 +362,30 @@ def main():
             pattern=r"^main:exams:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             exam_stage,
             pattern=r"^exam_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             exam_type,
             pattern=r"^exam_type:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             exam_locked,
             pattern=r"^exam_locked:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             exam_back,
             pattern=r"^exam_back:",
         )
     )
-
     # ========================================================
     # Search Button
     # ========================================================
@@ -397,7 +395,6 @@ def main():
             pattern=r"^main:search:",
         )
     )
-
     # ========================================================
     # Main Menu
     # ========================================================
@@ -407,14 +404,12 @@ def main():
             pattern=r"^main:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             back_main,
             pattern=r"^back_main:",
         )
     )
-
     # ========================================================
     # Stages
     # ========================================================
@@ -424,14 +419,12 @@ def main():
             pattern=r"^stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             locked_stage_button,
             pattern=r"^locked:",
         )
     )
-
     # ========================================================
     # Subjects
     # ========================================================
@@ -441,28 +434,24 @@ def main():
             pattern=r"^subjects_page:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             subject_button,
             pattern=r"^subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             back_to_subjects,
             pattern=r"^back_subjects:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             back_to_stages,
             pattern=r"^back_stages:",
         )
     )
-
     # ========================================================
     # Student Files
     # ========================================================
@@ -472,28 +461,24 @@ def main():
             pattern=r"^content:files:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             show_file_section,
             pattern=r"^files_section:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             file_button,
             pattern=r"^file:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             back_to_content,
             pattern=r"^back_content:",
         )
     )
-
     # ========================================================
     # Student Summaries
     # ========================================================
@@ -503,21 +488,18 @@ def main():
             pattern=r"^content:summaries:all:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             show_summaries_or_drawings,
             pattern=r"^content:summaries:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             show_summary_section,
             pattern=r"^summaries_section:",
         )
     )
-
     # ========================================================
     # Student Drawings
     # ========================================================
@@ -527,21 +509,18 @@ def main():
             pattern=r"^content:drawings:all:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             show_summaries_or_drawings,
             pattern=r"^content:drawings:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             study_item_button,
             pattern=r"^study_item:",
         )
     )
-
     # ========================================================
     # Admin Subjects
     # ========================================================
@@ -551,42 +530,36 @@ def main():
             pattern=r"^admin_subjects$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             back_to_stage_subjects,
             pattern=r"^admin_stage_subjects:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_stage,
             pattern=r"^manage_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_subject,
             pattern=r"^manage_subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_subject,
             pattern=r"^disable_subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_subject,
             pattern=r"^enable_subject:",
         )
     )
-
     # ========================================================
     # Admin Files
     # ========================================================
@@ -596,84 +569,72 @@ def main():
             pattern=r"^admin_files$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_stage,
             pattern=r"^admin_file_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_subject,
             pattern=r"^admin_file_subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_subjects,
             pattern=r"^admin_file_subjects:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_sections,
             pattern=r"^admin_file_sections:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_section,
             pattern=r"^admin_file_section:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_file_list,
             pattern=r"^admin_file_list:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_file,
             pattern=r"^manage_file:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_file,
             pattern=r"^disable_file:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_file,
             pattern=r"^enable_file:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_file,
             pattern=r"^delete_file:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             confirm_delete_file,
             pattern=r"^confirm_delete_file:",
         )
     )
-
     # ========================================================
     # Admin Summaries
     # ========================================================
@@ -683,84 +644,72 @@ def main():
             pattern=r"^admin_summaries$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_stage,
             pattern=r"^admin_summary_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_subject,
             pattern=r"^admin_summary_subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_subjects,
             pattern=r"^admin_summary_subjects:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_sections,
             pattern=r"^admin_summary_sections:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_section,
             pattern=r"^admin_summary_section:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_summary_list,
             pattern=r"^admin_summary_list:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_summary,
             pattern=r"^manage_summary:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_summary,
             pattern=r"^disable_summary:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_summary,
             pattern=r"^enable_summary:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_summary,
             pattern=r"^delete_summary:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             confirm_delete_summary,
             pattern=r"^confirm_delete_summary:",
         )
     )
-
     # ========================================================
     # Admin Drawings
     # ========================================================
@@ -770,84 +719,72 @@ def main():
             pattern=r"^admin_drawings$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_stage,
             pattern=r"^admin_drawing_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_subject,
             pattern=r"^admin_drawing_subject:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_subjects,
             pattern=r"^admin_drawing_subjects:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_sections,
             pattern=r"^admin_drawing_sections:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_section,
             pattern=r"^admin_drawing_section:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_drawing_list,
             pattern=r"^admin_drawing_list:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_drawing,
             pattern=r"^manage_drawing:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_drawing,
             pattern=r"^disable_drawing:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_drawing,
             pattern=r"^enable_drawing:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_drawing,
             pattern=r"^delete_drawing:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             confirm_delete_drawing,
             pattern=r"^confirm_delete_drawing:",
         )
     )
-
     # ========================================================
     # Admin Schedules
     # ========================================================
@@ -857,21 +794,18 @@ def main():
             pattern=r"^admin_schedules$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_schedule_stage,
             pattern=r"^admin_schedule_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_schedule,
             pattern=r"^delete_schedule:",
         )
     )
-
     # ========================================================
     # Admin Grades
     # ========================================================
@@ -881,56 +815,48 @@ def main():
             pattern=r"^admin_grades$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_grade_stage,
             pattern=r"^admin_grade_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             show_grade_list,
             pattern=r"^admin_grade_list:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_grade,
             pattern=r"^manage_grade:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_grade,
             pattern=r"^disable_grade:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_grade,
             pattern=r"^enable_grade:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_grade,
             pattern=r"^delete_grade:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             confirm_delete_grade,
             pattern=r"^confirm_delete_grade:",
         )
     )
-
     # ========================================================
     # Admin Exam Dates
     # ========================================================
@@ -940,49 +866,42 @@ def main():
             pattern=r"^admin_exams$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_exam_stage,
             pattern=r"^admin_exam_stage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             manage_exam,
             pattern=r"^manage_exam:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             disable_exam,
             pattern=r"^disable_exam:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             enable_exam,
             pattern=r"^enable_exam:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             delete_exam,
             pattern=r"^delete_exam:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             confirm_delete_exam,
             pattern=r"^confirm_delete_exam:",
         )
     )
-
     # ========================================================
     # Admin Tools
     # ========================================================
@@ -992,49 +911,42 @@ def main():
             pattern=r"^admin_tools$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             bot_status,
             pattern=r"^bot_status$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_roles,
             pattern=r"^admin_roles$",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             role_manage,
             pattern=r"^role_manage:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             change_role,
             pattern=r"^change_role:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             remove_role,
             pattern=r"^remove_role:",
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             set_role,
             pattern=r"^set_role:",
         )
     )
-
     # ========================================================
     # Bundle Descriptions
     # ========================================================
@@ -1044,7 +956,6 @@ def main():
             pattern=r"^bundle_descriptions$",
         )
     )
-
     # ========================================================
     # Admin Main Menu
     # ========================================================
@@ -1060,25 +971,20 @@ def main():
             ),
         )
     )
-
     application.add_handler(
         CallbackQueryHandler(
             admin_back,
             pattern=r"^admin_back$",
         )
     )
-
     # ========================================================
     # Run Bot
     # ========================================================
     print(
         "University Student Bot is running..."
     )
-
     application.run_polling(
         allowed_updates=Update.ALL_TYPES
     )
-
-
 if __name__ == "__main__":
     main()
