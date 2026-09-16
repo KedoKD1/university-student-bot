@@ -1,485 +1,586 @@
-from telegram import &#40;
+from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
-&#41;
-from telegram\.ext import ContextTypes
-from bot\.database\.client import supabase
-from bot\.utils\.permissions import &#40;
-    PERMISSION\_MANAGE\_SUBJECTS,
-    PERMISSION\_MANAGE\_FILES,
-    PERMISSION\_MANAGE\_SUMMARIES,
-    PERMISSION\_MANAGE\_DRAWINGS,
-    PERMISSION\_MANAGE\_SCHEDULES,
-    PERMISSION\_MANAGE\_GRADES,
-    PERMISSION\_MANAGE\_EXAMS,
-    PERMISSION\_MANAGE\_DESCRIPTIONS,
-    PERMISSION\_VIEW\_STATISTICS,
-    PERMISSION\_MANAGE\_ADMINS,
-    PERMISSION\_MANAGE\_ANNOUNCEMENTS,
-    PERMISSION\_MANAGE\_SETTINGS,
-    DEFAULT\_ROLE\_PERMISSIONS,
-    get\_admin,
-    get\_role\_permissions,
-    is\_admin,
-    has\_permission,
-&#41;
-\# ============================================================
-\# Admin permission snapshot
-\# ============================================================
-async def get\_admin\_permissions&#40;
-    user\_id: int,
-&#41;:
-    admin = await get\_admin&#40;
-        user\_id
-    &#41;
+)
+
+from telegram.ext import ContextTypes
+
+from bot.database.client import supabase
+
+from bot.utils.permissions import (
+    PERMISSION_MANAGE_SUBJECTS,
+    PERMISSION_MANAGE_FILES,
+    PERMISSION_MANAGE_SUMMARIES,
+    PERMISSION_MANAGE_DRAWINGS,
+    PERMISSION_MANAGE_SCHEDULES,
+    PERMISSION_MANAGE_GRADES,
+    PERMISSION_MANAGE_EXAMS,
+    PERMISSION_MANAGE_DESCRIPTIONS,
+    PERMISSION_VIEW_STATISTICS,
+    PERMISSION_MANAGE_ADMINS,
+    PERMISSION_MANAGE_ANNOUNCEMENTS,
+    PERMISSION_MANAGE_SETTINGS,
+    DEFAULT_ROLE_PERMISSIONS,
+    get_admin,
+    get_role_permissions,
+    is_admin,
+    has_permission,
+)
+
+
+# ============================================================
+# Admin permission snapshot
+# ============================================================
+
+async def get_admin_permissions(
+    user_id: int,
+):
+    admin = await get_admin(
+        user_id
+    )
+
     if not admin:
-        return None, set&#40;&#41;
-    role = admin\.get&#40;"role"&#41;
+        return None, set()
+
+    role = admin.get("role")
+
     if role == "owner":
-        return admin, \{
-            PERMISSION\_MANAGE\_SUBJECTS,
-            PERMISSION\_MANAGE\_FILES,
-            PERMISSION\_MANAGE\_SUMMARIES,
-            PERMISSION\_MANAGE\_DRAWINGS,
-            PERMISSION\_MANAGE\_SCHEDULES,
-            PERMISSION\_MANAGE\_GRADES,
-            PERMISSION\_MANAGE\_EXAMS,
-            PERMISSION\_MANAGE\_DESCRIPTIONS,
-            PERMISSION\_VIEW\_STATISTICS,
-            PERMISSION\_MANAGE\_ADMINS,
-            PERMISSION\_MANAGE\_ANNOUNCEMENTS,
-            PERMISSION\_MANAGE\_SETTINGS,
-        \}
-    permissions = set&#40;
-        DEFAULT\_ROLE\_PERMISSIONS\.get&#40;
+        return admin, {
+            PERMISSION_MANAGE_SUBJECTS,
+            PERMISSION_MANAGE_FILES,
+            PERMISSION_MANAGE_SUMMARIES,
+            PERMISSION_MANAGE_DRAWINGS,
+            PERMISSION_MANAGE_SCHEDULES,
+            PERMISSION_MANAGE_GRADES,
+            PERMISSION_MANAGE_EXAMS,
+            PERMISSION_MANAGE_DESCRIPTIONS,
+            PERMISSION_VIEW_STATISTICS,
+            PERMISSION_MANAGE_ADMINS,
+            PERMISSION_MANAGE_ANNOUNCEMENTS,
+            PERMISSION_MANAGE_SETTINGS,
+        }
+
+    permissions = set(
+        DEFAULT_ROLE_PERMISSIONS.get(
             role,
-            set&#40;&#41;,
-        &#41;
-    &#41;
-    database\_permissions = &#40;
-        await get\_role\_permissions&#40;
+            set(),
+        )
+    )
+
+    database_permissions = (
+        await get_role_permissions(
             role
-        &#41;
-    &#41;
-    if database\_permissions:
-        permissions\.update&#40;
-            database\_permissions
-        &#41;
+        )
+    )
+
+    if database_permissions:
+        permissions.update(
+            database_permissions
+        )
+
     return admin, permissions
-\# ============================================================
-\# Admin check
-\# ============================================================
-async def is\_admin\_user&#40;
-    user\_id: int,
-&#41; \-\> bool:
-    return await is\_admin&#40;
-        user\_id
-    &#41;
-\# ============================================================
-\# Admin keyboard
-\# ============================================================
-async def admin\_keyboard&#40;
-    user\_id: int,
-&#41;:
-    admin, permissions = &#40;
-        await get\_admin\_permissions&#40;
-            user\_id
-        &#41;
-    &#41;
+
+
+# ============================================================
+# Admin check
+# ============================================================
+
+async def is_admin_user(
+    user_id: int,
+) -> bool:
+    return await is_admin(
+        user_id
+    )
+
+
+# ============================================================
+# Admin keyboard
+# ============================================================
+
+async def admin_keyboard(
+    user_id: int,
+):
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
+    )
+
     if admin is None:
-        return InlineKeyboardMarkup&#40;&#91;&#93;&#41;
-    return await admin\_keyboard\_from\_permissions&#40;
+        return InlineKeyboardMarkup([])
+
+    return await admin_keyboard_from_permissions(
         permissions
-    &#41;
-\# ============================================================
-\# Admin command
-\# ============================================================
-async def admin\_command&#40;
+    )
+
+
+# ============================================================
+# Admin command
+# ============================================================
+
+async def admin_command(
     update: Update,
-    context: ContextTypes\.DEFAULT\_TYPE,
-&#41;:
-    if &#40;
-        update\.message is None
-        or update\.effective\_user is None
-    &#41;:
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if (
+        update.message is None
+        or update.effective_user is None
+    ):
         return
-    user\_id = update\.effective\_user\.id
-    admin, permissions = &#40;
-        await get\_admin\_permissions&#40;
-            user\_id
-        &#41;
-    &#41;
+
+    user_id = update.effective_user.id
+
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
+    )
+
     if admin is None:
-        await update\.message\.reply\_text&#40;
+        await update.message.reply_text(
             "⛔ عذراً، ليس لديك صلاحية "
-            "الوصول إلى لوحة الإدارة\."
-        &#41;
+            "الوصول إلى لوحة الإدارة."
+        )
         return
-    keyboard = &#40;
-        await admin\_keyboard\_from\_permissions&#40;
+
+    keyboard = (
+        await admin_keyboard_from_permissions(
             permissions
-        &#41;
-    &#41;
-    await update\.message\.reply\_text&#40;
-        "🛠️ لوحة الإدارة\\n\\n"
-        "أهلاً بك في لوحة إدارة LabBase\.\\n"
+        )
+    )
+
+    await update.message.reply_text(
+        "🛠️ لوحة الإدارة\n\n"
+        "أهلاً بك في لوحة إدارة LabBase.\n"
         "اختر القسم الذي تريد إدارته:",
-        reply\_markup=keyboard,
-    &#41;
-\# ============================================================
-\# Build keyboard
-\# ============================================================
-async def admin\_keyboard\_from\_permissions&#40;
+        reply_markup=keyboard,
+    )
+
+
+# ============================================================
+# Build keyboard
+# ============================================================
+
+async def admin_keyboard_from_permissions(
     permissions,
-&#41;:
-    keyboard = &#91;&#93;
-    if PERMISSION\_MANAGE\_SUBJECTS in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+):
+    keyboard = []
+
+    if PERMISSION_MANAGE_SUBJECTS in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📚 إدارة المواد",
-                callback\_data="admin\_subjects",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_FILES in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_subjects",
+            )
+        ])
+
+    if PERMISSION_MANAGE_FILES in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📄 إدارة الملفات",
-                callback\_data="admin\_files",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_SUMMARIES in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_files",
+            )
+        ])
+
+    if PERMISSION_MANAGE_SUMMARIES in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📝 إدارة الملخصات",
-                callback\_data="admin\_summaries",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_DRAWINGS in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_summaries",
+            )
+        ])
+
+    if PERMISSION_MANAGE_DRAWINGS in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="🎨 إدارة الرسومات",
-                callback\_data="admin\_drawings",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_SCHEDULES in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_drawings",
+            )
+        ])
+
+    if PERMISSION_MANAGE_SCHEDULES in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📅 إدارة الجداول",
-                callback\_data="admin\_schedules",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_GRADES in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_schedules",
+            )
+        ])
+
+    if PERMISSION_MANAGE_GRADES in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📝 إدارة الدرجات",
-                callback\_data="admin\_grades",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_EXAMS in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_grades",
+            )
+        ])
+
+    if PERMISSION_MANAGE_EXAMS in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📋 مواعيد الامتحانات",
-                callback\_data="admin\_exams",
-            &#41;
-        &#93;&#41;
-    has\_tools = &#40;
-        PERMISSION\_VIEW\_STATISTICS in permissions
-        or PERMISSION\_MANAGE\_ADMINS in permissions
-        or PERMISSION\_MANAGE\_DESCRIPTIONS in permissions
-    &#41;
-    if has\_tools:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_exams",
+            )
+        ])
+
+    has_tools = (
+        PERMISSION_VIEW_STATISTICS in permissions
+        or PERMISSION_MANAGE_ADMINS in permissions
+        or PERMISSION_MANAGE_DESCRIPTIONS in permissions
+    )
+
+    if has_tools:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="🧰 أدوات الإدارة",
-                callback\_data="admin\_tools",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_ANNOUNCEMENTS in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_tools",
+            )
+        ])
+
+    if PERMISSION_MANAGE_ANNOUNCEMENTS in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="📢 التبليغات",
-                callback\_data="admin\_announcements",
-            &#41;
-        &#93;&#41;
-    if PERMISSION\_MANAGE\_SETTINGS in permissions:
-        keyboard\.append&#40;&#91;
-            InlineKeyboardButton&#40;
+                callback_data="admin_announcements",
+            )
+        ])
+
+    if PERMISSION_MANAGE_SETTINGS in permissions:
+        keyboard.append([
+            InlineKeyboardButton(
                 text="⚙️ الإعدادات",
-                callback\_data="admin\_settings",
-            &#41;
-        &#93;&#41;
-    return InlineKeyboardMarkup&#40;
+                callback_data="admin_settings",
+            )
+        ])
+
+    return InlineKeyboardMarkup(
         keyboard
-    &#41;
-\# ============================================================
-\# Admin back
-\# ============================================================
-async def admin\_back&#40;
+    )
+
+
+# ============================================================
+# Admin back
+# ============================================================
+
+async def admin_back(
     update: Update,
-    context: ContextTypes\.DEFAULT\_TYPE,
-&#41;:
-    query = update\.callback\_query
-    if &#40;
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if (
         query is None
-        or query\.from\_user is None
-    &#41;:
+        or query.from_user is None
+    ):
         return
-    user\_id = query\.from\_user\.id
-    admin, permissions = &#40;
-        await get\_admin\_permissions&#40;
-            user\_id
-        &#41;
-    &#41;
+
+    user_id = query.from_user.id
+
+    admin, permissions = (
+        await get_admin_permissions(
+            user_id
+        )
+    )
+
     if admin is None:
-        await query\.answer&#40;
-            "⛔ ليس لديك صلاحية\.",
-            show\_alert=True,
-        &#41;
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
         return
-    await query\.answer&#40;&#41;
-    keyboard = &#40;
-        await admin\_keyboard\_from\_permissions&#40;
+
+    await query.answer()
+
+    keyboard = (
+        await admin_keyboard_from_permissions(
             permissions
-        &#41;
-    &#41;
-    await query\.edit\_message\_text&#40;
-        "🛠️ لوحة الإدارة\\n\\n"
-        "أهلاً بك في لوحة إدارة LabBase\.\\n"
+        )
+    )
+
+    await query.edit_message_text(
+        "🛠️ لوحة الإدارة\n\n"
+        "أهلاً بك في لوحة إدارة LabBase.\n"
         "اختر القسم الذي تريد إدارته:",
-        reply\_markup=keyboard,
-    &#41;
-\# ============================================================
-\# Delete subject
-\# ============================================================
-async def delete\_subject&#40;
+        reply_markup=keyboard,
+    )
+
+
+# ============================================================
+# Delete subject
+# ============================================================
+
+async def delete_subject(
     update: Update,
-    context: ContextTypes\.DEFAULT\_TYPE,
-&#41;:
-    query = update\.callback\_query
-    if &#40;
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if (
         query is None
-        or query\.from\_user is None
-    &#41;:
+        or query.from_user is None
+    ):
         return
-    user\_id = query\.from\_user\.id
-    if not await has\_permission&#40;
-        user\_id,
-        PERMISSION\_MANAGE\_SUBJECTS,
-    &#41;:
-        await query\.answer&#40;
-            "⛔ ليس لديك صلاحية\.",
-            show\_alert=True,
-        &#41;
+
+    user_id = query.from_user.id
+
+    if not await has_permission(
+        user_id,
+        PERMISSION_MANAGE_SUBJECTS,
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
         return
-    parts = query\.data\.split&#40;":"&#41;
-    if len&#40;parts&#41; \!= 3:
-        await query\.answer&#40;
-            "❌ اختيار غير صالح\.",
-            show\_alert=True,
-        &#41;
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
         return
-    subject\_id = parts&#91;1&#93;
-    stage\_id = parts&#91;2&#93;
-    response = &#40;
+
+    subject_id = parts[1]
+    stage_id = parts[2]
+
+    response = (
         supabase
-        \.table&#40;"subjects"&#41;
-        \.select&#40;"id, name"&#41;
-        \.eq&#40;"id", subject\_id&#41;
-        \.eq&#40;"stage\_id", stage\_id&#41;
-        \.limit&#40;1&#41;
-        \.execute&#40;&#41;
-    &#41;
-    subjects = response\.data or &#91;&#93;
+        .table("subjects")
+        .select("id, name")
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
     if not subjects:
-        await query\.answer&#40;
-            "❌ المادة غير موجودة\.",
-            show\_alert=True,
-        &#41;
+        await query.answer(
+            "❌ المادة غير موجودة.",
+            show_alert=True,
+        )
         return
-    subject = subjects&#91;0&#93;
-    await query\.answer&#40;&#41;
-    await query\.edit\_message\_text&#40;
-        "⚠️ تأكيد تعطيل المادة\\n\\n"
-        f"📘 المادة: \{subject&#91;'name'&#93;\}\\n\\n"
-        "هل أنت متأكد من تعطيل هذه المادة؟\\n\\n"
+
+    subject = subjects[0]
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "⚠️ تأكيد تعطيل المادة\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
+        "هل أنت متأكد من تعطيل هذه المادة؟\n\n"
         "ℹ️ سيتم إخفاؤها عن الطلاب بدون حذف "
-        "بياناتها نهائياً\.",
-        reply\_markup=InlineKeyboardMarkup&#40;&#91;
-            &#91;
-                InlineKeyboardButton&#40;
+        "بياناتها نهائياً.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
                     text="🔒 نعم، عطّل المادة",
-                    callback\_data=&#40;
-                        "admin\_confirm\_delete\_subject:"
-                        f"\{subject\_id\}:\{stage\_id\}"
-                    &#41;,
-                &#41;
-            &#93;,
-            &#91;
-                InlineKeyboardButton&#40;
+                    callback_data=(
+                        "admin_confirm_delete_subject:"
+                        f"{subject_id}:{stage_id}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="❌ إلغاء",
-                    callback\_data=&#40;
-                        f"manage\_subject:"
-                        f"\{subject\_id\}:\{stage\_id\}"
-                    &#41;,
-                &#41;
-            &#93;,
-        &#93;&#41;,
-    &#41;
-\# ============================================================
-\# Confirm subject disable
-\# ============================================================
-async def confirm\_delete\_subject&#40;
+                    callback_data=(
+                        f"manage_subject:"
+                        f"{subject_id}:{stage_id}"
+                    ),
+                )
+            ],
+        ]),
+    )
+
+
+# ============================================================
+# Confirm subject disable
+# ============================================================
+
+async def confirm_delete_subject(
     update: Update,
-    context: ContextTypes\.DEFAULT\_TYPE,
-&#41;:
-    query = update\.callback\_query
-    if &#40;
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if (
         query is None
-        or query\.from\_user is None
-    &#41;:
+        or query.from_user is None
+    ):
         return
-    user\_id = query\.from\_user\.id
-    if not await has\_permission&#40;
-        user\_id,
-        PERMISSION\_MANAGE\_SUBJECTS,
-    &#41;:
-        await query\.answer&#40;
-            "⛔ ليس لديك صلاحية\.",
-            show\_alert=True,
-        &#41;
+
+    user_id = query.from_user.id
+
+    if not await has_permission(
+        user_id,
+        PERMISSION_MANAGE_SUBJECTS,
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
         return
-    parts = query\.data\.split&#40;":"&#41;
-    if len&#40;parts&#41; \!= 3:
-        await query\.answer&#40;
-            "❌ اختيار غير صالح\.",
-            show\_alert=True,
-        &#41;
+
+    parts = query.data.split(":")
+
+    if len(parts) != 3:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
         return
-    subject\_id = parts&#91;1&#93;
-    stage\_id = parts&#91;2&#93;
-    response = &#40;
+
+    subject_id = parts[1]
+    stage_id = parts[2]
+
+    response = (
         supabase
-        \.table&#40;"subjects"&#41;
-        \.select&#40;
-            "id, name, is\_active"
-        &#41;
-        \.eq&#40;"id", subject\_id&#41;
-        \.eq&#40;"stage\_id", stage\_id&#41;
-        \.limit&#40;1&#41;
-        \.execute&#40;&#41;
-    &#41;
-    subjects = response\.data or &#91;&#93;
+        .table("subjects")
+        .select(
+            "id, name, is_active"
+        )
+        .eq("id", subject_id)
+        .eq("stage_id", stage_id)
+        .limit(1)
+        .execute()
+    )
+
+    subjects = response.data or []
+
     if not subjects:
-        await query\.answer&#40;
-            "❌ المادة غير موجودة\.",
-            show\_alert=True,
-        &#41;
+        await query.answer(
+            "❌ المادة غير موجودة.",
+            show_alert=True,
+        )
         return
-    subject = subjects&#91;0&#93;
-    await query\.answer&#40;
-        "⏳ جارٍ تعطيل المادة\.\.\."
-    &#41;
+
+    subject = subjects[0]
+
+    await query.answer(
+        "⏳ جارٍ تعطيل المادة..."
+    )
+
     try:
-        &#40;
+        (
             supabase
-            \.table&#40;"subjects"&#41;
-            \.update&#40;\{
-                "is\_active": False,
-            \}&#41;
-            \.eq&#40;"id", subject\_id&#41;
-            \.eq&#40;"stage\_id", stage\_id&#41;
-            \.execute&#40;&#41;
-        &#41;
+            .table("subjects")
+            .update({
+                "is_active": False,
+            })
+            .eq("id", subject_id)
+            .eq("stage_id", stage_id)
+            .execute()
+        )
+
     except Exception as exc:
-        print&#40;
+        print(
             "DISABLE SUBJECT ERROR:",
-            type&#40;exc&#41;\.\_\_name\_\_,
+            type(exc).__name__,
             exc,
-        &#41;
-        await query\.edit\_message\_text&#40;
-            "❌ تعذر تعطيل المادة\.\\n\\n"
-            "لم يتم إجراء أي تغيير\."
-        &#41;
+        )
+
+        await query.edit_message_text(
+            "❌ تعذر تعطيل المادة.\n\n"
+            "لم يتم إجراء أي تغيير."
+        )
         return
-    await query\.edit\_message\_text&#40;
-        "✅ تم تعطيل المادة بنجاح\.\\n\\n"
-        f"📘 المادة: \{subject&#91;'name'&#93;\}\\n\\n"
-        "🔒 تم إخفاؤها عن الطلاب\.\\n"
-        "📦 البيانات المرتبطة بالمادة لم تُحذف\.",
-        reply\_markup=InlineKeyboardMarkup&#40;&#91;
-            &#91;
-                InlineKeyboardButton&#40;
+
+    await query.edit_message_text(
+        "✅ تم تعطيل المادة بنجاح.\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
+        "🔒 تم إخفاؤها عن الطلاب.\n"
+        "📦 البيانات المرتبطة بالمادة لم تُحذف.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
                     text="⬅️ العودة إلى المواد",
-                    callback\_data=&#40;
-                        f"admin\_stage\_subjects:\{stage\_id\}"
-                    &#41;,
-                &#41;
-            &#93;,
-            &#91;
-                InlineKeyboardButton&#40;
+                    callback_data=(
+                        f"admin_stage_subjects:{stage_id}"
+                    ),
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🛠️ لوحة الإدارة",
-                    callback\_data="admin\_back",
-                &#41;
-            &#93;,
-        &#93;&#41;,
-    &#41;
-\# ============================================================
-\# Generic admin buttons
-\# ============================================================
-async def admin\_button&#40;
+                    callback_data="admin_back",
+                )
+            ],
+        ]),
+    )
+
+
+# ============================================================
+# Generic admin buttons
+# ============================================================
+
+async def admin_button(
     update: Update,
-    context: ContextTypes\.DEFAULT\_TYPE,
-&#41;:
-    query = update\.callback\_query
-    if &#40;
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if (
         query is None
-        or query\.from\_user is None
-    &#41;:
+        or query.from_user is None
+    ):
         return
-    user\_id = query\.from\_user\.id
-    admin = await get\_admin&#40;
-        user\_id
-    &#41;
+
+    user_id = query.from_user.id
+
+    admin = await get_admin(
+        user_id
+    )
+
     if admin is None:
-        await query\.answer&#40;
+        await query.answer(
             "⛔ ليس لديك صلاحية للوصول "
-            "إلى لوحة الإدارة\.",
-            show\_alert=True,
-        &#41;
+            "إلى لوحة الإدارة.",
+            show_alert=True,
+        )
         return
-    if query\.data\.startswith&#40;
-        "admin\_delete\_subject:"
-    &#41;:
-        await delete\_subject&#40;
+
+    if query.data.startswith(
+        "admin_delete_subject:"
+    ):
+        await delete_subject(
             update,
             context,
-        &#41;
+        )
         return
-    if query\.data\.startswith&#40;
-        "admin\_confirm\_delete\_subject:"
-    &#41;:
-        await confirm\_delete\_subject&#40;
+
+    if query.data.startswith(
+        "admin_confirm_delete_subject:"
+    ):
+        await confirm_delete_subject(
             update,
             context,
-        &#41;
+        )
         return
-    await query\.answer&#40;&#41;
-    if query\.data == "admin\_announcements":
-        from bot\.handlers\.admin\_notifications import &#40;
-            admin\_notifications,
-        &#41;
-        await admin\_notifications&#40;
+
+    await query.answer()
+
+    if query.data == "admin_announcements":
+        from bot.handlers.admin_notifications import (
+            admin_notifications,
+        )
+
+        await admin_notifications(
             update,
             context,
-        &#41;
+        )
         return
-    if query\.data == "admin\_settings":
-        from bot\.handlers\.admin\_settings import &#40;
-            admin\_settings,
-        &#41;
-        await admin\_settings&#40;
+
+    if query.data == "admin_settings":
+        from bot.handlers.admin_settings import (
+            admin_settings,
+        )
+
+        await admin_settings(
             update,
             context,
-        &#41;
+        )
         return
