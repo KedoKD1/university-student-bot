@@ -108,38 +108,26 @@ ADMIN_CACHE_TTL = 10
 ROLE_PERMISSION_CACHE_TTL = 30
 
 
-def clear_permission_cache(
-    user_id=None,
-):
+def clear_permission_cache(user_id=None):
     if user_id is None:
         _ADMIN_CACHE.clear()
         _ROLE_PERMISSION_CACHE.clear()
         return
-
-    admin = _ADMIN_CACHE.get(user_id)
 
     _ADMIN_CACHE.pop(
         user_id,
         None,
     )
 
-    if admin is not None:
-        _, admin_data = admin
-
-        if isinstance(admin_data, dict):
-            role = admin_data.get("role")
-
-            if role:
-                _ROLE_PERMISSION_CACHE.pop(
-                    role,
-                    None,
-                )
+    # Role permissions are cached by role,
+    # not by user ID.
+    #
+    # Clearing the role cache guarantees that
+    # permission changes become effective immediately.
+    _ROLE_PERMISSION_CACHE.clear()
 
 
-def _get_cached(
-    cache,
-    key,
-):
+def _get_cached(cache, key):
     item = cache.get(key)
 
     if item is None:
@@ -173,9 +161,7 @@ def _set_cached(
 # Get admin
 # ============================================================
 
-async def get_admin(
-    user_id: int,
-):
+async def get_admin(user_id: int):
     cached = _get_cached(
         _ADMIN_CACHE,
         user_id,
@@ -191,8 +177,14 @@ async def get_admin(
             .select(
                 "id, telegram_id, role, is_active"
             )
-            .eq("telegram_id", user_id)
-            .eq("is_active", True)
+            .eq(
+                "telegram_id",
+                user_id,
+            )
+            .eq(
+                "is_active",
+                True,
+            )
             .limit(1)
             .execute()
         )
@@ -227,9 +219,7 @@ async def get_admin(
 # Get role
 # ============================================================
 
-async def get_role(
-    user_id: int,
-):
+async def get_role(user_id: int):
     admin = await get_admin(
         user_id
     )
@@ -237,7 +227,9 @@ async def get_role(
     if not admin:
         return None
 
-    role = admin.get("role")
+    role = admin.get(
+        "role"
+    )
 
     if role not in VALID_ROLES:
         return None
@@ -252,8 +244,8 @@ async def get_role(
 async def is_admin(
     user_id: int,
 ) -> bool:
-    return await get_admin(
-        user_id
+    return (
+        await get_admin(user_id)
     ) is not None
 
 
@@ -295,7 +287,10 @@ async def get_role_permissions(
             .select(
                 "permission_id, permissions(name)"
             )
-            .eq("role", role)
+            .eq(
+                "role",
+                role,
+            )
             .execute()
         )
 
@@ -418,7 +413,10 @@ async def require_permission(
 
 CALLBACK_PERMISSIONS = {
 
+    # ========================================================
     # Subjects
+    # ========================================================
+
     "admin_subjects": PERMISSION_MANAGE_SUBJECTS,
     "admin_stage_subjects": PERMISSION_MANAGE_SUBJECTS,
     "manage_stage": PERMISSION_MANAGE_SUBJECTS,
@@ -428,7 +426,10 @@ CALLBACK_PERMISSIONS = {
     "admin_delete_subject": PERMISSION_MANAGE_SUBJECTS,
     "admin_confirm_delete_subject": PERMISSION_MANAGE_SUBJECTS,
 
+    # ========================================================
     # Files
+    # ========================================================
+
     "admin_files": PERMISSION_MANAGE_FILES,
     "admin_file_stage": PERMISSION_MANAGE_FILES,
     "admin_file_subject": PERMISSION_MANAGE_FILES,
@@ -442,7 +443,10 @@ CALLBACK_PERMISSIONS = {
     "delete_file": PERMISSION_MANAGE_FILES,
     "confirm_delete_file": PERMISSION_MANAGE_FILES,
 
+    # ========================================================
     # Summaries
+    # ========================================================
+
     "admin_summaries": PERMISSION_MANAGE_SUMMARIES,
     "admin_summary_stage": PERMISSION_MANAGE_SUMMARIES,
     "admin_summary_subject": PERMISSION_MANAGE_SUMMARIES,
@@ -456,7 +460,10 @@ CALLBACK_PERMISSIONS = {
     "delete_summary": PERMISSION_MANAGE_SUMMARIES,
     "confirm_delete_summary": PERMISSION_MANAGE_SUMMARIES,
 
+    # ========================================================
     # Drawings
+    # ========================================================
+
     "admin_drawings": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_stage": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_subject": PERMISSION_MANAGE_DRAWINGS,
@@ -470,12 +477,18 @@ CALLBACK_PERMISSIONS = {
     "delete_drawing": PERMISSION_MANAGE_DRAWINGS,
     "confirm_delete_drawing": PERMISSION_MANAGE_DRAWINGS,
 
+    # ========================================================
     # Schedules
+    # ========================================================
+
     "admin_schedules": PERMISSION_MANAGE_SCHEDULES,
     "admin_schedule_stage": PERMISSION_MANAGE_SCHEDULES,
     "delete_schedule": PERMISSION_MANAGE_SCHEDULES,
 
+    # ========================================================
     # Grades
+    # ========================================================
+
     "admin_grades": PERMISSION_MANAGE_GRADES,
     "admin_grade_stage": PERMISSION_MANAGE_GRADES,
     "admin_grade_list": PERMISSION_MANAGE_GRADES,
@@ -488,7 +501,10 @@ CALLBACK_PERMISSIONS = {
     "delete_grade": PERMISSION_MANAGE_GRADES,
     "confirm_delete_grade": PERMISSION_MANAGE_GRADES,
 
+    # ========================================================
     # Exam dates
+    # ========================================================
+
     "admin_exams": PERMISSION_MANAGE_EXAMS,
     "admin_exam_stage": PERMISSION_MANAGE_EXAMS,
     "admin_exam_list": PERMISSION_MANAGE_EXAMS,
@@ -500,34 +516,51 @@ CALLBACK_PERMISSIONS = {
     "delete_exam": PERMISSION_MANAGE_EXAMS,
     "confirm_delete_exam": PERMISSION_MANAGE_EXAMS,
 
+    # ========================================================
     # Descriptions
+    # ========================================================
+
     "bundle_descriptions": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_type": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_stage": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_subject": PERMISSION_MANAGE_DESCRIPTIONS,
 
+    # ========================================================
     # Statistics
+    # ========================================================
+
     "bot_status": PERMISSION_VIEW_STATISTICS,
 
+    # ========================================================
     # Admin management
+    # ========================================================
+
     "admin_roles": PERMISSION_MANAGE_ADMINS,
     "role_manage": PERMISSION_MANAGE_ADMINS,
     "change_role": PERMISSION_MANAGE_ADMINS,
     "remove_role": PERMISSION_MANAGE_ADMINS,
     "set_role": PERMISSION_MANAGE_ADMINS,
 
-    # Announcements
-    "admin_announcements": PERMISSION_MANAGE_ANNOUNCEMENTS,
-    "admin_notify_new": PERMISSION_MANAGE_ANNOUNCEMENTS,
-    "admin_notify_audience": PERMISSION_MANAGE_ANNOUNCEMENTS,
-    "admin_notify_send": PERMISSION_MANAGE_ANNOUNCEMENTS,
-    "admin_notify_delete": PERMISSION_MANAGE_ANNOUNCEMENTS,
-    "admin_notify_cancel": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    # ========================================================
+    # Notifications
+    # ========================================================
 
+    "admin_announcements": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "notify_audience": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "notify_chat": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "notify_confirm": PERMISSION_MANAGE_ANNOUNCEMENTS,
+    "notify_cancel": PERMISSION_MANAGE_ANNOUNCEMENTS,
+
+    # ========================================================
     # Settings
+    # ========================================================
+
     "admin_settings": PERMISSION_MANAGE_SETTINGS,
-    "admin_setting_edit": PERMISSION_MANAGE_SETTINGS,
-    "admin_setting_cancel": PERMISSION_MANAGE_SETTINGS,
+    "setting_edit": PERMISSION_MANAGE_SETTINGS,
+    "setting_refresh": PERMISSION_MANAGE_SETTINGS,
+    "setting_value": PERMISSION_MANAGE_SETTINGS,
+    "setting_back": PERMISSION_MANAGE_SETTINGS,
+    "setting_cancel": PERMISSION_MANAGE_SETTINGS,
 }
 
 
