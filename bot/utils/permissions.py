@@ -48,6 +48,15 @@ PERMISSION_MANAGE_SETTINGS = "manage_settings"
 
 # ============================================================
 # Default role permissions
+#
+# Kept for compatibility with existing project code.
+#
+# IMPORTANT:
+# These defaults are NOT used by has_permission() for
+# admin/moderator.
+#
+# Database role_permissions is the source of truth.
+# Owner always has full access automatically.
 # ============================================================
 
 DEFAULT_ROLE_PERMISSIONS = {
@@ -109,6 +118,17 @@ ROLE_PERMISSION_CACHE_TTL = 30
 
 
 def clear_permission_cache(user_id=None):
+    """
+    Clear cached admin and role permission data.
+
+    If user_id is None:
+        Clear everything.
+
+    If user_id is provided:
+        Clear that user's admin cache and all role
+        permission caches.
+    """
+
     if user_id is None:
         _ADMIN_CACHE.clear()
         _ROLE_PERMISSION_CACHE.clear()
@@ -119,11 +139,9 @@ def clear_permission_cache(user_id=None):
         None,
     )
 
-    # Role permissions are cached by role,
-    # not by user ID.
-    #
-    # Clearing the role cache guarantees that
-    # permission changes become effective immediately.
+    # Role permissions are cached by role, not user.
+    # Clearing the role cache guarantees that permission
+    # changes become effective immediately.
     _ROLE_PERMISSION_CACHE.clear()
 
 
@@ -270,6 +288,25 @@ async def is_owner(
 async def get_role_permissions(
     role: str,
 ):
+    """
+    Return the permissions explicitly assigned to a role
+    in the database.
+
+    Database table:
+        role_permissions
+            -> permissions(name)
+
+    The database is the source of truth for admin/moderator.
+    """
+
+    if role not in VALID_ROLES:
+        return set()
+
+    # Owner does not need database permission rows.
+    # Owner automatically has all permissions.
+    if role == ROLE_OWNER:
+        return set()
+
     cached = _get_cached(
         _ROLE_PERMISSION_CACHE,
         role,
@@ -337,6 +374,16 @@ async def has_permission(
     user_id: int,
     permission: str,
 ) -> bool:
+    """
+    Check whether a user has a specific permission.
+
+    Rules:
+        owner      -> always allowed
+        admin      -> database permissions only
+        moderator  -> database permissions only
+        others     -> denied
+    """
+
     role = await get_role(
         user_id
     )
@@ -344,24 +391,19 @@ async def has_permission(
     if role is None:
         return False
 
+    # Owner has full access automatically.
     if role == ROLE_OWNER:
         return True
 
+    # Admin and moderator permissions are controlled
+    # exclusively through role_permissions.
     database_permissions = (
         await get_role_permissions(
             role
         )
     )
 
-    if permission in database_permissions:
-        return True
-
-    return permission in (
-        DEFAULT_ROLE_PERMISSIONS.get(
-            role,
-            set(),
-        )
-    )
+    return permission in database_permissions
 
 
 # ============================================================
