@@ -8,6 +8,10 @@ from bot.keyboards.main_menu import (
 from bot.handlers.stages import show_stages
 from bot.handlers.search import start_search
 from bot.handlers.grades import grades_callback
+from bot.handlers.student_settings import (
+    show_student_settings,
+    student_settings_callback,
+)
 
 
 # ============================================================
@@ -77,10 +81,6 @@ async def main_menu_button(
 
     parts = query.data.split(":")
 
-    # --------------------------------------------------------
-    # All main callbacks must start with main:
-    # --------------------------------------------------------
-
     if len(parts) < 3 or parts[0] != "main":
         await query.answer(
             "❌ اختيار غير صالح.",
@@ -90,24 +90,17 @@ async def main_menu_button(
 
     section = parts[1]
 
-    # --------------------------------------------------------
-    # Owner ID is always the last part
-    # --------------------------------------------------------
-
     owner_id = parts[-1]
 
     try:
         owner_id = int(owner_id)
+
     except (TypeError, ValueError):
         await query.answer(
             "❌ المستخدم غير صالح.",
             show_alert=True,
         )
         return
-
-    # --------------------------------------------------------
-    # Callback ownership protection
-    # --------------------------------------------------------
 
     if query.from_user.id != owner_id:
         await query.answer(
@@ -131,6 +124,20 @@ async def main_menu_button(
         "grades_back",
     ):
         await grades_callback(
+            update,
+            context,
+        )
+        return
+
+    # --------------------------------------------------------
+    # Student Settings
+    #
+    # All student settings callbacks use:
+    # main:settings:...
+    # --------------------------------------------------------
+
+    if section == "settings":
+        await student_settings_callback(
             update,
             context,
         )
@@ -199,20 +206,6 @@ async def main_menu_button(
         return
 
     # --------------------------------------------------------
-    # Settings
-    # --------------------------------------------------------
-
-    if section == "settings":
-        await query.edit_message_text(
-            "⚙️ الإعدادات\n\n"
-            "هذا القسم قيد الإنشاء وسيتم توفيره قريباً.",
-            reply_markup=back_main_keyboard(
-                owner_id,
-            ),
-        )
-        return
-
-    # --------------------------------------------------------
     # Unknown section
     # --------------------------------------------------------
 
@@ -243,12 +236,6 @@ async def back_main(
 
     parts = query.data.split(":")
 
-    # --------------------------------------------------------
-    # Expected:
-    #
-    # back_main:user_id
-    # --------------------------------------------------------
-
     if len(parts) != 2 or parts[0] != "back_main":
         await query.answer(
             "❌ اختيار غير صالح.",
@@ -260,16 +247,13 @@ async def back_main(
 
     try:
         owner_id = int(owner_id)
+
     except (TypeError, ValueError):
         await query.answer(
             "❌ المستخدم غير صالح.",
             show_alert=True,
         )
         return
-
-    # --------------------------------------------------------
-    # Callback ownership protection
-    # --------------------------------------------------------
 
     if query.from_user.id != owner_id:
         await query.answer(
