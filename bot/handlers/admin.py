@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from bot.database.client import supabase
 
 from bot.utils.permissions import (
+    PERMISSION_VIEW_ADMIN,
     PERMISSION_MANAGE_SUBJECTS,
     PERMISSION_MANAGE_FILES,
     PERMISSION_MANAGE_SUMMARIES,
@@ -19,6 +20,7 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_DESCRIPTIONS,
     PERMISSION_VIEW_STATISTICS,
     PERMISSION_MANAGE_ADMINS,
+    PERMISSION_MANAGE_PERMISSIONS,
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     PERMISSION_MANAGE_SETTINGS,
     get_admin,
@@ -49,10 +51,7 @@ async def get_admin_permissions(
     # Owner has full access automatically.
     if role == "owner":
         return admin, {
-            PERMISSION_VIEW_ADMIN
-            if False
-            else "view_admin",
-
+            PERMISSION_VIEW_ADMIN,
             PERMISSION_MANAGE_SUBJECTS,
             PERMISSION_MANAGE_FILES,
             PERMISSION_MANAGE_SUMMARIES,
@@ -63,9 +62,7 @@ async def get_admin_permissions(
             PERMISSION_MANAGE_DESCRIPTIONS,
             PERMISSION_VIEW_STATISTICS,
             PERMISSION_MANAGE_ADMINS,
-            PERMISSION_MANAGE_PERMISSIONS
-            if False
-            else "manage_permissions",
+            PERMISSION_MANAGE_PERMISSIONS,
             PERMISSION_MANAGE_ANNOUNCEMENTS,
             PERMISSION_MANAGE_SETTINGS,
         }
@@ -139,6 +136,16 @@ async def admin_command(
     )
 
     if admin is None:
+        await update.message.reply_text(
+            "⛔ عذراً، ليس لديك صلاحية "
+            "الوصول إلى لوحة الإدارة."
+        )
+        return
+
+    if (
+        PERMISSION_VIEW_ADMIN not in permissions
+        and admin.get("role") != "owner"
+    ):
         await update.message.reply_text(
             "⛔ عذراً، ليس لديك صلاحية "
             "الوصول إلى لوحة الإدارة."
@@ -235,6 +242,7 @@ async def admin_keyboard_from_permissions(
     has_tools = (
         PERMISSION_VIEW_STATISTICS in permissions
         or PERMISSION_MANAGE_ADMINS in permissions
+        or PERMISSION_MANAGE_PERMISSIONS in permissions
         or PERMISSION_MANAGE_DESCRIPTIONS in permissions
     )
 
@@ -294,6 +302,16 @@ async def admin_back(
     )
 
     if admin is None:
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    if (
+        PERMISSION_VIEW_ADMIN not in permissions
+        and admin.get("role") != "owner"
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -592,8 +610,6 @@ async def admin_button(
         )
         return
 
-    await query.answer()
-
     if query.data == "admin_announcements":
         if not await has_permission(
             user_id,
@@ -604,6 +620,8 @@ async def admin_button(
                 show_alert=True,
             )
             return
+
+        await query.answer()
 
         await query.edit_message_text(
             "📢 التبليغات\n\n"
@@ -620,6 +638,8 @@ async def admin_button(
                 show_alert=True,
             )
             return
+
+        await query.answer()
 
         await query.edit_message_text(
             "⚙️ الإعدادات\n\n"
