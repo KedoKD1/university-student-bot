@@ -21,7 +21,11 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_ADMINS,
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     PERMISSION_MANAGE_SETTINGS,
-    DEFAULT_ROLE_PERMISSIONS,
+    PERMISSION_MANAGE_PERMISSIONS,
+    PERMISSION_MANAGE_BACKUP,
+    PERMISSION_VIEW_AUDIT_LOGS,
+    PERMISSION_MANAGE_QUIZZES,
+    PERMISSION_MANAGE_AI,
     get_admin,
     get_role_permissions,
     is_admin,
@@ -47,6 +51,7 @@ async def get_admin_permissions(
         "role"
     )
 
+    # Owner has full access.
     if role == "owner":
         return admin, {
             PERMISSION_MANAGE_SUBJECTS,
@@ -61,27 +66,24 @@ async def get_admin_permissions(
             PERMISSION_MANAGE_ADMINS,
             PERMISSION_MANAGE_ANNOUNCEMENTS,
             PERMISSION_MANAGE_SETTINGS,
+            PERMISSION_MANAGE_PERMISSIONS,
+            PERMISSION_MANAGE_BACKUP,
+            PERMISSION_VIEW_AUDIT_LOGS,
+            PERMISSION_MANAGE_QUIZZES,
+            PERMISSION_MANAGE_AI,
         }
 
-    permissions = set(
-        DEFAULT_ROLE_PERMISSIONS.get(
-            role,
-            set(),
-        )
-    )
-
+    # Admin and moderator permissions are controlled
+    # exclusively by the database.
     database_permissions = (
         await get_role_permissions(
             role
         )
     )
 
-    if database_permissions:
-        permissions.update(
-            database_permissions
-        )
-
-    return admin, permissions
+    return admin, set(
+        database_permissions
+    )
 
 
 # ============================================================
@@ -236,7 +238,10 @@ async def admin_keyboard_from_permissions(
     has_tools = (
         PERMISSION_VIEW_STATISTICS in permissions
         or PERMISSION_MANAGE_ADMINS in permissions
+        or PERMISSION_MANAGE_PERMISSIONS in permissions
         or PERMISSION_MANAGE_DESCRIPTIONS in permissions
+        or PERMISSION_MANAGE_BACKUP in permissions
+        or PERMISSION_VIEW_AUDIT_LOGS in permissions
     )
 
     if has_tools:
@@ -596,12 +601,32 @@ async def admin_button(
     await query.answer()
 
     if query.data == "admin_announcements":
+        if not await has_permission(
+            user_id,
+            PERMISSION_MANAGE_ANNOUNCEMENTS,
+        ):
+            await query.answer(
+                "⛔ ليس لديك صلاحية.",
+                show_alert=True,
+            )
+            return
+
         await query.edit_message_text(
             "📢 التبليغات\n\n"
             "هذا القسم قيد الإنشاء."
         )
 
     elif query.data == "admin_settings":
+        if not await has_permission(
+            user_id,
+            PERMISSION_MANAGE_SETTINGS,
+        ):
+            await query.answer(
+                "⛔ ليس لديك صلاحية.",
+                show_alert=True,
+            )
+            return
+
         await query.edit_message_text(
             "⚙️ الإعدادات\n\n"
             "هذا القسم قيد الإنشاء."
