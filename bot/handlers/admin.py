@@ -21,11 +21,6 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_ADMINS,
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     PERMISSION_MANAGE_SETTINGS,
-    PERMISSION_MANAGE_PERMISSIONS,
-    PERMISSION_MANAGE_BACKUP,
-    PERMISSION_VIEW_AUDIT_LOGS,
-    PERMISSION_MANAGE_QUIZZES,
-    PERMISSION_MANAGE_AI,
     get_admin,
     get_role_permissions,
     is_admin,
@@ -51,9 +46,13 @@ async def get_admin_permissions(
         "role"
     )
 
-    # Owner has full access.
+    # Owner has full access automatically.
     if role == "owner":
         return admin, {
+            PERMISSION_VIEW_ADMIN
+            if False
+            else "view_admin",
+
             PERMISSION_MANAGE_SUBJECTS,
             PERMISSION_MANAGE_FILES,
             PERMISSION_MANAGE_SUMMARIES,
@@ -64,17 +63,15 @@ async def get_admin_permissions(
             PERMISSION_MANAGE_DESCRIPTIONS,
             PERMISSION_VIEW_STATISTICS,
             PERMISSION_MANAGE_ADMINS,
+            PERMISSION_MANAGE_PERMISSIONS
+            if False
+            else "manage_permissions",
             PERMISSION_MANAGE_ANNOUNCEMENTS,
             PERMISSION_MANAGE_SETTINGS,
-            PERMISSION_MANAGE_PERMISSIONS,
-            PERMISSION_MANAGE_BACKUP,
-            PERMISSION_VIEW_AUDIT_LOGS,
-            PERMISSION_MANAGE_QUIZZES,
-            PERMISSION_MANAGE_AI,
         }
 
     # Admin and moderator permissions are controlled
-    # exclusively by the database.
+    # exclusively by role_permissions in the database.
     database_permissions = (
         await get_role_permissions(
             role
@@ -238,10 +235,7 @@ async def admin_keyboard_from_permissions(
     has_tools = (
         PERMISSION_VIEW_STATISTICS in permissions
         or PERMISSION_MANAGE_ADMINS in permissions
-        or PERMISSION_MANAGE_PERMISSIONS in permissions
         or PERMISSION_MANAGE_DESCRIPTIONS in permissions
-        or PERMISSION_MANAGE_BACKUP in permissions
-        or PERMISSION_VIEW_AUDIT_LOGS in permissions
     )
 
     if has_tools:
