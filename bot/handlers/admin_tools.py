@@ -16,10 +16,12 @@ from telegram.ext import (
 from bot.database.client import supabase
 
 from bot.utils.permissions import (
-    is_admin,
-    is_owner,
-    get_admin,
+    has_permission,
     clear_permission_cache,
+    PERMISSION_VIEW_ADMIN,
+    PERMISSION_VIEW_STATISTICS,
+    PERMISSION_MANAGE_ADMINS,
+    PERMISSION_MANAGE_DESCRIPTIONS,
 )
 
 
@@ -37,33 +39,70 @@ ROLE_NAMES = {
 # Tools keyboard
 # ============================================================
 
-def tools_keyboard():
-    return InlineKeyboardMarkup([
-        [
+async def tools_keyboard(
+    user_id: int,
+):
+    keyboard = []
+
+    # --------------------------------------------------------
+    # Bot status
+    # --------------------------------------------------------
+
+    if await has_permission(
+        user_id,
+        PERMISSION_VIEW_STATISTICS,
+    ):
+        keyboard.append([
             InlineKeyboardButton(
                 "📊 حالة البوت",
                 callback_data="bot_status",
             )
-        ],
-        [
+        ])
+
+    # --------------------------------------------------------
+    # Admin management
+    # --------------------------------------------------------
+
+    if await has_permission(
+        user_id,
+        PERMISSION_MANAGE_ADMINS,
+    ):
+        keyboard.append([
             InlineKeyboardButton(
                 "👥 إدارة المشرفين",
                 callback_data="admin_roles",
             )
-        ],
-        [
+        ])
+
+    # --------------------------------------------------------
+    # Bundle descriptions
+    # --------------------------------------------------------
+
+    if await has_permission(
+        user_id,
+        PERMISSION_MANAGE_DESCRIPTIONS,
+    ):
+        keyboard.append([
             InlineKeyboardButton(
                 "📝 أوصاف الإرسال",
                 callback_data="bundle_descriptions",
             )
-        ],
-        [
-            InlineKeyboardButton(
-                "⬅️ لوحة الإدارة",
-                callback_data="admin_back",
-            )
-        ],
+        ])
+
+    # --------------------------------------------------------
+    # Back to admin panel
+    # --------------------------------------------------------
+
+    keyboard.append([
+        InlineKeyboardButton(
+            "⬅️ لوحة الإدارة",
+            callback_data="admin_back",
+        )
     ])
+
+    return InlineKeyboardMarkup(
+        keyboard
+    )
 
 
 # ============================================================
@@ -79,7 +118,10 @@ async def admin_tools(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_VIEW_ADMIN,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -91,7 +133,9 @@ async def admin_tools(
     await query.edit_message_text(
         "🧰 أدوات الإدارة\n\n"
         "اختر العملية:",
-        reply_markup=tools_keyboard(),
+        reply_markup=await tools_keyboard(
+            query.from_user.id,
+        ),
     )
 
 
@@ -144,9 +188,12 @@ async def bot_status(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_VIEW_STATISTICS,
+    ):
         await query.answer(
-            "⛔ ليس لديك صلاحية.",
+            "⛔ ليس لديك صلاحية لعرض الإحصائيات.",
             show_alert=True,
         )
         return
@@ -268,11 +315,12 @@ async def admin_roles(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return
@@ -391,16 +439,16 @@ async def role_add_start(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return ConversationHandler.END
 
-    # Clear any stale data from a previous role operation.
     context.user_data.pop(
         "role_target_id",
         None,
@@ -511,8 +559,8 @@ async def role_receive_username(
         if part
     ).strip()
 
-    # Never allow creating/changing an owner through
-    # the normal role assignment flow.
+    # Never allow creating/changing an owner
+    # through the normal role assignment flow.
     try:
         existing_owner = (
             supabase
@@ -617,11 +665,12 @@ async def set_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return
@@ -737,7 +786,6 @@ async def set_role(
 
         return
 
-    # The target's role may have been cached.
     clear_permission_cache(
         target_id
     )
@@ -780,11 +828,12 @@ async def role_manage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return
@@ -939,11 +988,12 @@ async def change_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return
@@ -1059,11 +1109,12 @@ async def remove_role(
     if query is None or query.from_user is None:
         return
 
-    if not await is_owner(
-        query.from_user.id
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_ADMINS,
     ):
         await query.answer(
-            "⛔ هذا الخيار للـ Owner فقط.",
+            "⛔ ليس لديك صلاحية لإدارة المشرفين.",
             show_alert=True,
         )
         return
