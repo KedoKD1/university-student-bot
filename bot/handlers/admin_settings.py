@@ -405,11 +405,6 @@ async def admin_settings(
         )
         return ConversationHandler.END
 
-    context.user_data.pop(
-        "admin_setting",
-        None,
-    )
-
     context.user_data[
         "admin_setting"
     ] = {
@@ -654,10 +649,15 @@ async def setting_predefined_value(
         )
         return SETTINGS_VALUE
 
-    context.user_data.pop(
-        "admin_setting",
-        None,
+    owner_id = setting_data.get(
+        "owner_id"
     )
+
+    context.user_data[
+        "admin_setting"
+    ] = {
+        "owner_id": owner_id,
+    }
 
     await query.answer(
         "✅ تم حفظ الإعداد."
@@ -758,10 +758,15 @@ async def setting_value(
 
         return SETTINGS_VALUE
 
-    context.user_data.pop(
-        "admin_setting",
-        None,
+    owner_id = setting_data.get(
+        "owner_id"
     )
+
+    context.user_data[
+        "admin_setting"
+    ] = {
+        "owner_id": owner_id,
+    }
 
     await message.reply_text(
         "✅ تم حفظ الإعداد.\n\n"
@@ -799,15 +804,14 @@ async def setting_back(
     ):
         return ConversationHandler.END
 
-    context.user_data.pop(
-        "admin_setting",
-        None,
+    owner_id = _get_setting_owner(
+        context
     )
 
     context.user_data[
         "admin_setting"
     ] = {
-        "owner_id": query.from_user.id,
+        "owner_id": owner_id,
     }
 
     await query.answer()
