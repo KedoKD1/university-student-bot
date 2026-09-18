@@ -53,6 +53,39 @@ async def _has_notification_permission(
 
 
 # ============================================================
+# Owner protection
+# ============================================================
+
+def _get_notification_owner(
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    notification = context.user_data.get(
+        "admin_notification"
+    )
+
+    if not notification:
+        return None
+
+    return notification.get(
+        "owner_id"
+    )
+
+
+def _is_notification_owner(
+    user_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> bool:
+    owner_id = _get_notification_owner(
+        context
+    )
+
+    return (
+        owner_id is not None
+        and int(owner_id) == int(user_id)
+    )
+
+
+# ============================================================
 # Audience keyboard
 # ============================================================
 
@@ -238,8 +271,10 @@ async def admin_notifications(
     ):
         return ConversationHandler.END
 
+    user_id = query.from_user.id
+
     if not await _has_notification_permission(
-        query.from_user.id
+        user_id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -251,7 +286,9 @@ async def admin_notifications(
 
     context.user_data[
         "admin_notification"
-    ] = {}
+    ] = {
+        "owner_id": user_id,
+    }
 
     await query.answer()
 
@@ -280,14 +317,33 @@ async def notification_audience(
     ):
         return ConversationHandler.END
 
+    user_id = query.from_user.id
+
     if not await _has_notification_permission(
-        query.from_user.id
+        user_id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return ConversationHandler.END
+
+    notification = _get_notification(
+        context
+    )
+
+    if notification is None:
+        return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
+    ):
+        await query.answer(
+            "⛔ هذه العملية مو إلك.",
+            show_alert=True,
+        )
+        return NOTIFICATION_AUDIENCE
 
     data = query.data or ""
 
@@ -311,13 +367,6 @@ async def notification_audience(
         ":",
         1,
     )[1]
-
-    notification = _get_notification(
-        context
-    )
-
-    if notification is None:
-        notification = {}
 
     if audience == "all":
         notification[
@@ -429,8 +478,16 @@ async def notification_user_id(
     ):
         return ConversationHandler.END
 
+    user_id = message.from_user.id
+
     if not await _has_notification_permission(
-        message.from_user.id
+        user_id
+    ):
+        return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
     ):
         return ConversationHandler.END
 
@@ -446,7 +503,9 @@ async def notification_user_id(
     ).strip()
 
     try:
-        user_id = int(raw_user_id)
+        target_user_id = int(
+            raw_user_id
+        )
 
     except ValueError:
         await message.reply_text(
@@ -461,7 +520,7 @@ async def notification_user_id(
 
     notification[
         "audience_value"
-    ] = str(user_id)
+    ] = str(target_user_id)
 
     context.user_data[
         "admin_notification"
@@ -490,14 +549,26 @@ async def notification_chat(
     ):
         return ConversationHandler.END
 
+    user_id = query.from_user.id
+
     if not await _has_notification_permission(
-        query.from_user.id
+        user_id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
+    ):
+        await query.answer(
+            "⛔ هذه العملية مو إلك.",
+            show_alert=True,
+        )
+        return NOTIFICATION_AUDIENCE
 
     data = query.data or ""
 
@@ -538,7 +609,7 @@ async def notification_chat(
     )
 
     if notification is None:
-        notification = {}
+        return ConversationHandler.END
 
     notification[
         "audience_type"
@@ -577,8 +648,16 @@ async def notification_title(
     ):
         return ConversationHandler.END
 
+    user_id = message.from_user.id
+
     if not await _has_notification_permission(
-        message.from_user.id
+        user_id
+    ):
+        return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
     ):
         return ConversationHandler.END
 
@@ -639,8 +718,16 @@ async def notification_content(
     ):
         return ConversationHandler.END
 
+    user_id = message.from_user.id
+
     if not await _has_notification_permission(
-        message.from_user.id
+        user_id
+    ):
+        return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
     ):
         return ConversationHandler.END
 
@@ -771,14 +858,26 @@ async def notification_confirm(
     ):
         return ConversationHandler.END
 
+    user_id = query.from_user.id
+
     if not await _has_notification_permission(
-        query.from_user.id
+        user_id
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
+    ):
+        await query.answer(
+            "⛔ هذا التبليغ مو إلك.",
+            show_alert=True,
+        )
+        return NOTIFICATION_CONFIRM
 
     notification = _get_notification(
         context
@@ -840,7 +939,7 @@ async def notification_confirm(
 
     try:
         row = await _create_notification(
-            query.from_user.id,
+            user_id,
             title,
             content,
             audience_type,
@@ -1166,7 +1265,6 @@ async def _send_notification(
         if not sent:
             failed += 1
 
-        # Small delay to reduce burst sending.
         await asyncio.sleep(0.05)
 
     if failed == 0:
@@ -1297,6 +1395,27 @@ async def notification_cancel(
 
     if query is None:
         _clear_notification(context)
+        return ConversationHandler.END
+
+    user_id = query.from_user.id
+
+    if not await _has_notification_permission(
+        user_id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    if not _is_notification_owner(
+        user_id,
+        context,
+    ):
+        await query.answer(
+            "⛔ هذا التبليغ مو إلك.",
+            show_alert=True,
+        )
         return ConversationHandler.END
 
     await query.answer()
