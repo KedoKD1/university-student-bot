@@ -15,7 +15,10 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+from bot.utils.permissions import (
+    PERMISSION_MANAGE_SUMMARIES,
+    has_permission,
+)
 
 
 # =========================
@@ -94,6 +97,70 @@ def clear_summary_conversation(context):
 
     for key in keys:
         context.user_data.pop(key, None)
+
+
+async def has_summary_permission(user_id):
+    return await has_permission(
+        user_id,
+        PERMISSION_MANAGE_SUMMARIES,
+    )
+
+
+def is_summary_session_owner(context, user_id):
+    return (
+        context.user_data.get("admin_summary_owner_id")
+        == user_id
+    )
+
+
+async def check_summary_access(query, context):
+    if query is None or query.from_user is None:
+        return False
+
+    user_id = query.from_user.id
+
+    if not await has_summary_permission(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الملخصات.",
+            show_alert=True,
+        )
+        return False
+
+    owner_id = context.user_data.get(
+        "admin_summary_owner_id"
+    )
+
+    if owner_id is not None and owner_id != user_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الملخصات ليست لك.",
+            show_alert=True,
+        )
+        return False
+
+    return True
+
+
+async def check_summary_message_access(update, context):
+    if update.effective_user is None:
+        return False
+
+    user_id = update.effective_user.id
+
+    if not await has_summary_permission(user_id):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ ليس لديك صلاحية إدارة الملخصات."
+            )
+        return False
+
+    if not is_summary_session_owner(context, user_id):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ هذه جلسة إدارة الملخصات ليست لك."
+            )
+        return False
+
+    return True
 
 
 def extract_telegram_file(message):
@@ -319,7 +386,7 @@ def after_save_keyboard(
             InlineKeyboardButton(
                 text="🛠️ لوحة الإدارة",
                 callback_data="admin_back",
-            )
+            ),
         ],
     ])
 
@@ -412,12 +479,20 @@ async def admin_summaries(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_summary_permission(
+        query.from_user.id
+    ):
         await query.answer(
-            "⛔ ليس لديك صلاحية.",
+            "⛔ ليس لديك صلاحية إدارة الملخصات.",
             show_alert=True,
         )
         return
+
+    clear_summary_conversation(context)
+
+    context.user_data["admin_summary_owner_id"] = (
+        query.from_user.id
+    )
 
     await query.answer()
 
@@ -476,11 +551,10 @@ async def admin_summary_stage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -548,11 +622,10 @@ async def admin_summary_subject(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -613,11 +686,10 @@ async def admin_summary_subjects(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -677,11 +749,10 @@ async def admin_summary_section(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -734,11 +805,10 @@ async def admin_summary_sections(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -799,11 +869,10 @@ async def admin_summary_list(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -860,11 +929,10 @@ async def manage_summary(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -965,11 +1033,10 @@ async def toggle_summary(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1049,11 +1116,10 @@ async def delete_summary(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1069,6 +1135,13 @@ async def delete_summary(
     stage_id = parts[2]
     subject_id = parts[3]
     section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     summary = await get_summary(
         summary_id,
@@ -1107,11 +1180,10 @@ async def confirm_delete_summary(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1127,6 +1199,13 @@ async def confirm_delete_summary(
     stage_id = parts[2]
     subject_id = parts[3]
     section_type = normalize_section_type(parts[4])
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     summary = await get_summary(
         summary_id,
@@ -1144,14 +1223,14 @@ async def confirm_delete_summary(
         "⏳ جارٍ حذف الملخص..."
     )
 
+    now = datetime.now(
+        timezone.utc
+    ).isoformat()
+
     supabase.table("summaries").update({
-        "deleted_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "deleted_at": now,
         "is_active": False,
-        "updated_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "updated_at": now,
     }).eq(
         "id",
         summary_id,
@@ -1193,11 +1272,10 @@ async def start_add_summary(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return ConversationHandler.END
 
     parts = query.data.split(":")
@@ -1222,9 +1300,14 @@ async def start_add_summary(
 
     clear_summary_conversation(context)
 
+    context.user_data["admin_summary_owner_id"] = (
+        query.from_user.id
+    )
     context.user_data["admin_summary_stage_id"] = stage_id
     context.user_data["admin_summary_subject_id"] = subject_id
-    context.user_data["admin_summary_section_type"] = section_type
+    context.user_data["admin_summary_section_type"] = (
+        section_type
+    )
 
     await query.answer()
 
@@ -1240,6 +1323,12 @@ async def receive_add_summary_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return ADD_SUMMARY_NAME
 
@@ -1266,6 +1355,12 @@ async def receive_add_summary_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return ADD_SUMMARY_DESCRIPTION
 
@@ -1289,6 +1384,12 @@ async def receive_add_summary_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return ADD_SUMMARY_ORDER
 
@@ -1329,6 +1430,12 @@ async def receive_add_summary_upload(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return ADD_SUMMARY_UPLOAD
 
@@ -1427,11 +1534,10 @@ async def start_edit_summary(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_summary_access(
+        query,
+        context,
+    ):
         return ConversationHandler.END
 
     parts = query.data.split(":")
@@ -1448,6 +1554,13 @@ async def start_edit_summary(
     subject_id = parts[3]
     section_type = normalize_section_type(parts[4])
 
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ نوع القسم غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
     summary = await get_summary(
         summary_id,
         subject_id,
@@ -1462,9 +1575,14 @@ async def start_edit_summary(
 
     clear_summary_conversation(context)
 
+    context.user_data["admin_summary_owner_id"] = (
+        query.from_user.id
+    )
     context.user_data["admin_summary_stage_id"] = stage_id
     context.user_data["admin_summary_subject_id"] = subject_id
-    context.user_data["admin_summary_section_type"] = section_type
+    context.user_data["admin_summary_section_type"] = (
+        section_type
+    )
     context.user_data["admin_summary_id"] = summary_id
 
     await query.answer()
@@ -1482,6 +1600,12 @@ async def receive_edit_summary_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return EDIT_SUMMARY_NAME
 
@@ -1509,6 +1633,12 @@ async def receive_edit_summary_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return EDIT_SUMMARY_DESCRIPTION
 
@@ -1531,6 +1661,12 @@ async def receive_edit_summary_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_summary_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if update.message is None:
         return EDIT_SUMMARY_ORDER
 
@@ -1627,6 +1763,28 @@ async def cancel_summary_operation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if update.effective_user is None:
+        return ConversationHandler.END
+
+    user_id = update.effective_user.id
+
+    if not await has_summary_permission(user_id):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ ليس لديك صلاحية إدارة الملخصات."
+            )
+        return ConversationHandler.END
+
+    if not is_summary_session_owner(
+        context,
+        user_id,
+    ):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ هذه جلسة إدارة الملخصات ليست لك."
+            )
+        return ConversationHandler.END
+
     clear_summary_conversation(context)
 
     if update.message:
