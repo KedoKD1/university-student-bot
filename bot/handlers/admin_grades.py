@@ -97,17 +97,99 @@ def clear_grade_conversation(context):
         "admin_grade_file_id",
         "admin_grade_name",
         "admin_grade_description",
+        "admin_grade_owner_id",
     ]
 
     for key in keys:
         context.user_data.pop(key, None)
 
 
+def is_grade_session_owner(
+    context,
+    user_id,
+):
+    return (
+        context.user_data.get(
+            "admin_grade_owner_id"
+        )
+        == user_id
+    )
+
+
+def parse_owner_callback(
+    callback_data,
+    expected_length,
+):
+    parts = callback_data.split(":")
+
+    if len(parts) != expected_length:
+        return None
+
+    try:
+        owner_id = int(parts[-1])
+    except (TypeError, ValueError):
+        return None
+
+    return parts, owner_id
+
+
+async def check_grade_callback_access(
+    query,
+    context,
+):
+    if query is None or query.from_user is None:
+        return False
+
+    user_id = query.from_user.id
+
+    if not await can_manage_grades(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الدرجات.",
+            show_alert=True,
+        )
+        return False
+
+    if not is_grade_session_owner(
+        context,
+        user_id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return False
+
+    return True
+
+
+async def check_grade_message_access(
+    update,
+    context,
+):
+    user = update.effective_user
+
+    if user is None:
+        return False
+
+    user_id = user.id
+
+    if not await can_manage_grades(user_id):
+        return False
+
+    return is_grade_session_owner(
+        context,
+        user_id,
+    )
+
+
 # ============================================================
 # Keyboards
 # ============================================================
 
-def grades_stage_keyboard(stages):
+def grades_stage_keyboard(
+    stages,
+    owner_id,
+):
     keyboard = []
 
     for stage in stages:
@@ -118,7 +200,9 @@ def grades_stage_keyboard(stages):
             InlineKeyboardButton(
                 text=f"📚 المرحلة {stage['stage_number']}",
                 callback_data=(
-                    f"admin_grade_stage:{stage['id']}"
+                    f"admin_grade_stage:"
+                    f"{stage['id']}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -126,14 +210,21 @@ def grades_stage_keyboard(stages):
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للوحة الإدارة",
-            callback_data="admin_back",
+            callback_data=(
+                f"admin_grades_back:"
+                f"{owner_id}"
+            ),
         )
     ])
 
     return InlineKeyboardMarkup(keyboard)
 
 
-def grades_list_keyboard(files, stage_id):
+def grades_list_keyboard(
+    files,
+    stage_id,
+    owner_id,
+):
     keyboard = []
 
     for grade_file in files:
@@ -151,7 +242,9 @@ def grades_list_keyboard(files, stage_id):
                 ),
                 callback_data=(
                     f"manage_grade:"
-                    f"{grade_file['id']}:{stage_id}"
+                    f"{grade_file['id']}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -159,21 +252,31 @@ def grades_list_keyboard(files, stage_id):
     keyboard.append([
         InlineKeyboardButton(
             text="➕ إضافة ملف درجات",
-            callback_data=f"add_grade:{stage_id}",
+            callback_data=(
+                f"add_grade:"
+                f"{stage_id}:"
+                f"{owner_id}"
+            ),
         )
     ])
 
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للمراحل",
-            callback_data="admin_grades",
+            callback_data=(
+                f"admin_grade_list_back:"
+                f"{owner_id}"
+            ),
         )
     ])
 
     keyboard.append([
         InlineKeyboardButton(
             text="🛠️ لوحة الإدارة",
-            callback_data="admin_back",
+            callback_data=(
+                f"admin_grades_back:"
+                f"{owner_id}"
+            ),
         )
     ])
 
@@ -184,16 +287,23 @@ def grade_manage_keyboard(
     file_id,
     stage_id,
     is_active,
+    owner_id,
 ):
     if is_active:
         toggle_text = "🔴 تعطيل الملف"
         toggle_callback = (
-            f"disable_grade:{file_id}:{stage_id}"
+            f"disable_grade:"
+            f"{file_id}:"
+            f"{stage_id}:"
+            f"{owner_id}"
         )
     else:
         toggle_text = "🟢 تفعيل الملف"
         toggle_callback = (
-            f"enable_grade:{file_id}:{stage_id}"
+            f"enable_grade:"
+            f"{file_id}:"
+            f"{stage_id}:"
+            f"{owner_id}"
         )
 
     return InlineKeyboardMarkup([
@@ -201,7 +311,10 @@ def grade_manage_keyboard(
             InlineKeyboardButton(
                 text="✏️ تعديل البيانات",
                 callback_data=(
-                    f"edit_grade:{file_id}:{stage_id}"
+                    f"edit_grade:"
+                    f"{file_id}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -209,7 +322,10 @@ def grade_manage_keyboard(
             InlineKeyboardButton(
                 text="🔄 استبدال الملف",
                 callback_data=(
-                    f"replace_grade:{file_id}:{stage_id}"
+                    f"replace_grade:"
+                    f"{file_id}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -223,7 +339,10 @@ def grade_manage_keyboard(
             InlineKeyboardButton(
                 text="🗑️ حذف الملف",
                 callback_data=(
-                    f"delete_grade:{file_id}:{stage_id}"
+                    f"delete_grade:"
+                    f"{file_id}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -231,28 +350,38 @@ def grade_manage_keyboard(
             InlineKeyboardButton(
                 text="⬅️ رجوع لملفات الدرجات",
                 callback_data=(
-                    f"admin_grade_list:{stage_id}"
+                    f"admin_grade_list:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ],
     ])
 
 
-def delete_grade_keyboard(file_id, stage_id):
+def delete_grade_keyboard(
+    file_id,
+    stage_id,
+    owner_id,
+):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="🗑️ نعم، احذف",
                 callback_data=(
                     f"confirm_delete_grade:"
-                    f"{file_id}:{stage_id}"
+                    f"{file_id}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             ),
             InlineKeyboardButton(
                 text="❌ إلغاء",
                 callback_data=(
                     f"manage_grade:"
-                    f"{file_id}:{stage_id}"
+                    f"{file_id}:"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             ),
         ]
@@ -283,14 +412,20 @@ async def admin_grades(
     if query is None or query.from_user is None:
         return
 
-    if not await can_manage_grades(
-        query.from_user.id
-    ):
+    user_id = query.from_user.id
+
+    if not await can_manage_grades(user_id):
         await query.answer(
             "⛔ ليس لديك صلاحية إدارة الدرجات.",
             show_alert=True,
         )
         return
+
+    clear_grade_conversation(context)
+
+    context.user_data[
+        "admin_grade_owner_id"
+    ] = user_id
 
     await query.answer()
 
@@ -314,7 +449,10 @@ async def admin_grades(
                 [
                     InlineKeyboardButton(
                         "🛠️ لوحة الإدارة",
-                        callback_data="admin_back",
+                        callback_data=(
+                            f"admin_grades_back:"
+                            f"{user_id}"
+                        ),
                     )
                 ]
             ]),
@@ -325,8 +463,71 @@ async def admin_grades(
         "📝 إدارة الدرجات\n\n"
         "اختر المرحلة:",
         reply_markup=grades_stage_keyboard(
-            stages
+            stages,
+            user_id,
         ),
+    )
+
+
+# ============================================================
+# Admin Grades Back
+# ============================================================
+
+async def admin_grades_back(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await can_manage_grades(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الدرجات.",
+            show_alert=True,
+        )
+        return
+
+    parsed = parse_owner_callback(
+        query.data,
+        2,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    _, owner_id = parsed
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه الجلسة ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    context.user_data[
+        "admin_grade_owner_id"
+    ] = owner_id
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "🛠️ لوحة الإدارة",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "⬅️ رجوع",
+                    callback_data="admin_back",
+                )
+            ]
+        ]),
     )
 
 
@@ -343,6 +544,20 @@ async def admin_grade_stage(
     if query is None or query.from_user is None:
         return
 
+    parsed = parse_owner_callback(
+        query.data,
+        3,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -352,16 +567,31 @@ async def admin_grade_stage(
         )
         return
 
-    parts = query.data.split(":")
-
-    if len(parts) != 2:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return
 
-    stage_id = int(parts[1])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        stage_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ المرحلة غير صالحة.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -369,6 +599,7 @@ async def admin_grade_stage(
         update,
         context,
         stage_id,
+        owner_id,
     )
 
 
@@ -380,10 +611,37 @@ async def show_grade_list(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     stage_id: int,
+    owner_id: int,
 ):
     query = update.callback_query
 
     if query is None or query.from_user is None:
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه الجلسة ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not await can_manage_grades(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
         return
 
     response = (
@@ -418,15 +676,16 @@ async def show_grade_list(
         reply_markup=grades_list_keyboard(
             files,
             stage_id,
+            owner_id,
         ),
     )
 
 
 # ============================================================
-# Manage Grade
+# Grade List Back
 # ============================================================
 
-async def manage_grade(
+async def admin_grade_list(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
@@ -444,17 +703,175 @@ async def manage_grade(
         )
         return
 
-    parts = query.data.split(":")
+    parsed = parse_owner_callback(
+        query.data,
+        3,
+    )
 
-    if len(parts) != 3:
+    if parsed is None:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    parts, owner_id = parsed
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه الجلسة ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        stage_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ المرحلة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    await show_grade_list(
+        update,
+        context,
+        stage_id,
+        owner_id,
+    )
+
+
+async def admin_grade_list_back(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    if not await can_manage_grades(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    parsed = parse_owner_callback(
+        query.data,
+        2,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    _, owner_id = parsed
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه الجلسة ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    await admin_grades(
+        update,
+        context,
+    )
+
+
+# ============================================================
+# Manage Grade
+# ============================================================
+
+async def manage_grade(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    parts, owner_id = parsed
+
+    if not await can_manage_grades(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه الجلسة ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return
 
     response = (
         supabase
@@ -500,6 +917,7 @@ async def manage_grade(
             file_id,
             stage_id,
             grade_file.get("is_active", False),
+            owner_id,
         ),
     )
 
@@ -517,6 +935,20 @@ async def add_grade(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
+    parsed = parse_owner_callback(
+        query.data,
+        3,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -526,18 +958,39 @@ async def add_grade(
         )
         return ConversationHandler.END
 
-    parts = query.data.split(":")
-
-    if len(parts) != 2:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return ConversationHandler.END
 
-    stage_id = int(parts[1])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
-    context.user_data["admin_grade_stage_id"] = stage_id
+    try:
+        stage_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ المرحلة غير صالحة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    context.user_data[
+        "admin_grade_stage_id"
+    ] = stage_id
+
+    context.user_data[
+        "admin_grade_owner_id"
+    ] = owner_id
 
     await query.answer()
 
@@ -556,6 +1009,12 @@ async def add_grade_name(
     if update.message is None:
         return ADD_GRADE_NAME
 
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
+        return ADD_GRADE_NAME
+
     name = normalize_text(
         update.message.text or ""
     )
@@ -567,7 +1026,9 @@ async def add_grade_name(
         )
         return ADD_GRADE_NAME
 
-    context.user_data["admin_grade_name"] = name
+    context.user_data[
+        "admin_grade_name"
+    ] = name
 
     await update.message.reply_text(
         "📝 أرسل وصف الملف.\n\n"
@@ -582,6 +1043,12 @@ async def add_grade_description(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     if update.message is None:
+        return ADD_GRADE_DESCRIPTION
+
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
         return ADD_GRADE_DESCRIPTION
 
     description = normalize_description(
@@ -605,6 +1072,12 @@ async def add_grade_upload(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     if update.message is None:
+        return ADD_GRADE_UPLOAD
+
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
         return ADD_GRADE_UPLOAD
 
     (
@@ -645,7 +1118,7 @@ async def add_grade_upload(
         return ConversationHandler.END
 
     try:
-        (
+        response = (
             supabase
             .table("grade_files")
             .insert({
@@ -659,6 +1132,11 @@ async def add_grade_upload(
             })
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no inserted grade file."
+            )
 
     except Exception as exc:
         print(
@@ -697,6 +1175,20 @@ async def edit_grade(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -706,17 +1198,32 @@ async def edit_grade(
         )
         return ConversationHandler.END
 
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return ConversationHandler.END
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    try:
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     response = (
         supabase
@@ -750,6 +1257,10 @@ async def edit_grade(
         "admin_grade_stage_id"
     ] = stage_id
 
+    context.user_data[
+        "admin_grade_owner_id"
+    ] = owner_id
+
     await query.answer()
 
     await query.message.reply_text(
@@ -767,6 +1278,12 @@ async def edit_grade_name(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     if update.message is None:
+        return EDIT_GRADE_NAME
+
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
         return EDIT_GRADE_NAME
 
     name = normalize_text(
@@ -798,6 +1315,12 @@ async def edit_grade_description(
     if update.message is None:
         return EDIT_GRADE_DESCRIPTION
 
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
+        return EDIT_GRADE_DESCRIPTION
+
     description = normalize_description(
         update.message.text or ""
     )
@@ -824,7 +1347,7 @@ async def edit_grade_description(
         return ConversationHandler.END
 
     try:
-        (
+        response = (
             supabase
             .table("grade_files")
             .update({
@@ -836,8 +1359,14 @@ async def edit_grade_description(
             })
             .eq("id", file_id)
             .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no updated grade file."
+            )
 
     except Exception as exc:
         print(
@@ -876,6 +1405,20 @@ async def replace_grade(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -885,17 +1428,32 @@ async def replace_grade(
         )
         return ConversationHandler.END
 
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return ConversationHandler.END
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    try:
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     context.user_data[
         "admin_grade_file_id"
@@ -904,6 +1462,10 @@ async def replace_grade(
     context.user_data[
         "admin_grade_stage_id"
     ] = stage_id
+
+    context.user_data[
+        "admin_grade_owner_id"
+    ] = owner_id
 
     await query.answer()
 
@@ -920,6 +1482,12 @@ async def replace_grade_upload(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     if update.message is None:
+        return REPLACE_GRADE_UPLOAD
+
+    if not await check_grade_message_access(
+        update,
+        context,
+    ):
         return REPLACE_GRADE_UPLOAD
 
     (
@@ -955,7 +1523,7 @@ async def replace_grade_upload(
         return ConversationHandler.END
 
     try:
-        (
+        response = (
             supabase
             .table("grade_files")
             .update({
@@ -968,8 +1536,14 @@ async def replace_grade_upload(
             })
             .eq("id", file_id)
             .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no replaced grade file."
+            )
 
     except Exception as exc:
         print(
@@ -1031,6 +1605,20 @@ async def toggle_grade(
     if query is None or query.from_user is None:
         return
 
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -1040,20 +1628,35 @@ async def toggle_grade(
         )
         return
 
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     try:
-        (
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        response = (
             supabase
             .table("grade_files")
             .update({
@@ -1067,6 +1670,11 @@ async def toggle_grade(
             .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no toggled grade file."
+            )
 
     except Exception as exc:
         print(
@@ -1104,6 +1712,20 @@ async def delete_grade(
     if query is None or query.from_user is None:
         return
 
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -1113,17 +1735,32 @@ async def delete_grade(
         )
         return
 
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -1135,6 +1772,7 @@ async def delete_grade(
         reply_markup=delete_grade_keyboard(
             file_id,
             stage_id,
+            owner_id,
         ),
     )
 
@@ -1148,6 +1786,20 @@ async def confirm_delete_grade(
     if query is None or query.from_user is None:
         return
 
+    parsed = parse_owner_callback(
+        query.data,
+        4,
+    )
+
+    if parsed is None:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    parts, owner_id = parsed
+
     if not await can_manage_grades(
         query.from_user.id
     ):
@@ -1157,24 +1809,39 @@ async def confirm_delete_grade(
         )
         return
 
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
+    if query.from_user.id != owner_id:
         await query.answer(
-            "❌ اختيار غير صالح.",
+            "⛔ هذه الجلسة ليست لك.",
             show_alert=True,
         )
         return
 
-    file_id = int(parts[1])
-    stage_id = int(parts[2])
+    if not is_grade_session_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الدرجات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        file_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ بيانات الملف غير صالحة.",
+            show_alert=True,
+        )
+        return
 
     now = datetime.now(
         timezone.utc
     ).isoformat()
 
     try:
-        (
+        response = (
             supabase
             .table("grade_files")
             .update({
@@ -1187,6 +1854,11 @@ async def confirm_delete_grade(
             .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no deleted grade file."
+            )
 
     except Exception as exc:
         print(
@@ -1209,6 +1881,7 @@ async def confirm_delete_grade(
         update,
         context,
         stage_id,
+        owner_id,
     )
 
 
