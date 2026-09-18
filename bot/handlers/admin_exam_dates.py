@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from telegram import (
     InlineKeyboardButton,
@@ -62,6 +62,108 @@ async def can_manage_exams(user_id):
         user_id,
         PERMISSION_MANAGE_EXAMS,
     )
+
+
+# ============================================================
+# Conversation helpers
+# ============================================================
+
+def clear_exam_conversation(context):
+    for key in [
+        "admin_exam_owner_id",
+        "exam_id",
+        "exam_stage_id",
+        "exam_subject_id",
+        "exam_type",
+        "exam_title",
+        "exam_date",
+        "exam_time",
+        "exam_notes",
+    ]:
+        context.user_data.pop(
+            key,
+            None,
+        )
+
+
+def is_exam_session_owner(
+    context,
+    user_id,
+):
+    return (
+        context.user_data.get(
+            "admin_exam_owner_id"
+        )
+        == user_id
+    )
+
+
+async def check_exam_access(
+    query,
+    context,
+):
+    if query is None or query.from_user is None:
+        return False
+
+    user_id = query.from_user.id
+
+    if not await can_manage_exams(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الامتحانات.",
+            show_alert=True,
+        )
+        return False
+
+    owner_id = context.user_data.get(
+        "admin_exam_owner_id"
+    )
+
+    if (
+        owner_id is not None
+        and owner_id != user_id
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة امتحانات ليست لك.",
+            show_alert=True,
+        )
+        return False
+
+    return True
+
+
+async def check_exam_message_access(
+    update,
+    context,
+    state,
+):
+    user = update.effective_user
+
+    if user is None:
+        return ConversationHandler.END
+
+    user_id = user.id
+
+    if not await can_manage_exams(user_id):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ لم تعد لديك صلاحية إدارة الامتحانات."
+            )
+
+        clear_exam_conversation(context)
+
+        return ConversationHandler.END
+
+    owner_id = context.user_data.get(
+        "admin_exam_owner_id"
+    )
+
+    if (
+        owner_id is not None
+        and owner_id != user_id
+    ):
+        return state
+
+    return None
 
 
 # ============================================================
@@ -137,7 +239,11 @@ def exam_list_keyboard(exams, stage_id):
     return InlineKeyboardMarkup(keyboard)
 
 
-def manage_exam_keyboard(exam_id, stage_id, is_active):
+def manage_exam_keyboard(
+    exam_id,
+    stage_id,
+    is_active,
+):
     keyboard = [
         [
             InlineKeyboardButton(
@@ -303,7 +409,14 @@ async def admin_exam_stage(
         )
         return
 
-    stage_id = int(parts[1])
+    try:
+        stage_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -366,10 +479,24 @@ async def add_exam_start(
         )
         return ConversationHandler.END
 
-    stage_id = int(parts[1])
+    try:
+        stage_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
-    context.user_data["exam_stage_id"] = stage_id
-    context.user_data.pop("exam_id", None)
+    clear_exam_conversation(context)
+
+    context.user_data[
+        "admin_exam_owner_id"
+    ] = query.from_user.id
+
+    context.user_data[
+        "exam_stage_id"
+    ] = stage_id
 
     await query.answer()
 
@@ -390,10 +517,32 @@ async def add_exam_type(
 ):
     query = update.callback_query
 
-    if query is None:
+    if query is None or query.from_user is None:
         return ADD_EXAM_TYPE
 
-    exam_type = query.data.split(":", 1)[1]
+    if not await check_exam_access(
+        query,
+        context,
+    ):
+        return ADD_EXAM_TYPE
+
+    parts = query.data.split(":", 1)
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ADD_EXAM_TYPE
+
+    exam_type = parts[1]
+
+    if exam_type not in EXAM_TYPES:
+        await query.answer(
+            "❌ نوع امتحان غير صالح.",
+            show_alert=True,
+        )
+        return ADD_EXAM_TYPE
 
     context.user_data["exam_type"] = exam_type
 
@@ -413,6 +562,15 @@ async def add_exam_title(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        ADD_EXAM_TITLE,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return ADD_EXAM_TITLE
 
@@ -431,6 +589,13 @@ async def add_exam_title(
     stage_id = context.user_data.get(
         "exam_stage_id"
     )
+
+    if not stage_id:
+        await update.message.reply_text(
+            "❌ انتهت جلسة الإضافة."
+        )
+        clear_exam_conversation(context)
+        return ConversationHandler.END
 
     response = (
         supabase
@@ -490,19 +655,42 @@ async def add_exam_subject(
 ):
     query = update.callback_query
 
-    if query is None:
+    if query is None or query.from_user is None:
         return ADD_EXAM_SUBJECT
 
-    value = query.data.split(
+    if not await check_exam_access(
+        query,
+        context,
+    ):
+        return ADD_EXAM_SUBJECT
+
+    parts = query.data.split(
         ":",
         1,
-    )[1]
-
-    context.user_data["exam_subject_id"] = (
-        None
-        if value == "none"
-        else int(value)
     )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ADD_EXAM_SUBJECT
+
+    value = parts[1]
+
+    if value == "none":
+        subject_id = None
+    else:
+        try:
+            subject_id = int(value)
+        except ValueError:
+            await query.answer(
+                "❌ اختيار غير صالح.",
+                show_alert=True,
+            )
+            return ADD_EXAM_SUBJECT
+
+    context.user_data["exam_subject_id"] = subject_id
 
     await query.answer()
 
@@ -521,6 +709,15 @@ async def add_exam_date(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        ADD_EXAM_DATE,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return ADD_EXAM_DATE
 
@@ -561,6 +758,15 @@ async def add_exam_time(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        ADD_EXAM_TIME,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return ADD_EXAM_TIME
 
@@ -610,6 +816,15 @@ async def add_exam_notes(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        ADD_EXAM_NOTES,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return ADD_EXAM_NOTES
 
@@ -631,20 +846,33 @@ async def add_exam_notes(
         "exam_stage_id"
     )
 
+    exam_type = context.user_data.get(
+        "exam_type"
+    )
+
+    title = context.user_data.get(
+        "exam_title"
+    )
+
+    exam_date = context.user_data.get(
+        "exam_date"
+    )
+
+    if not stage_id or not exam_type or not title or not exam_date:
+        await update.message.reply_text(
+            "❌ انتهت جلسة الإضافة."
+        )
+        clear_exam_conversation(context)
+        return ConversationHandler.END
+
     payload = {
         "stage_id": stage_id,
         "subject_id": context.user_data.get(
             "exam_subject_id"
         ),
-        "exam_type": context.user_data.get(
-            "exam_type"
-        ),
-        "title": context.user_data.get(
-            "exam_title"
-        ),
-        "exam_date": context.user_data.get(
-            "exam_date"
-        ),
+        "exam_type": exam_type,
+        "title": title,
+        "exam_date": exam_date,
         "exam_time": context.user_data.get(
             "exam_time"
         ),
@@ -654,9 +882,17 @@ async def add_exam_notes(
     }
 
     try:
-        supabase.table(
-            "exam_dates"
-        ).insert(payload).execute()
+        response = (
+            supabase
+            .table("exam_dates")
+            .insert(payload)
+            .execute()
+        )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no inserted exam."
+            )
 
     except Exception as exc:
         print(
@@ -669,32 +905,11 @@ async def add_exam_notes(
             "❌ تعذر إضافة موعد الامتحان."
         )
 
+        clear_exam_conversation(context)
+
         return ConversationHandler.END
 
-    context.user_data.pop(
-        "exam_stage_id",
-        None,
-    )
-    context.user_data.pop(
-        "exam_subject_id",
-        None,
-    )
-    context.user_data.pop(
-        "exam_type",
-        None,
-    )
-    context.user_data.pop(
-        "exam_title",
-        None,
-    )
-    context.user_data.pop(
-        "exam_date",
-        None,
-    )
-    context.user_data.pop(
-        "exam_time",
-        None,
-    )
+    clear_exam_conversation(context)
 
     await update.message.reply_text(
         "✅ تم إضافة موعد الامتحان بنجاح.\n\n"
@@ -735,8 +950,15 @@ async def manage_exam(
         )
         return
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
 
     response = (
         supabase
@@ -849,8 +1071,15 @@ async def edit_exam_start(
         )
         return ConversationHandler.END
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     response = (
         supabase
@@ -876,6 +1105,12 @@ async def edit_exam_start(
         return ConversationHandler.END
 
     exam = rows[0]
+
+    clear_exam_conversation(context)
+
+    context.user_data[
+        "admin_exam_owner_id"
+    ] = query.from_user.id
 
     context.user_data["exam_id"] = exam_id
     context.user_data["exam_stage_id"] = stage_id
@@ -917,10 +1152,35 @@ async def edit_exam_type(
 ):
     query = update.callback_query
 
-    value = query.data.split(
+    if query is None or query.from_user is None:
+        return EDIT_EXAM_TYPE
+
+    if not await check_exam_access(
+        query,
+        context,
+    ):
+        return EDIT_EXAM_TYPE
+
+    parts = query.data.split(
         ":",
         1,
-    )[1]
+    )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return EDIT_EXAM_TYPE
+
+    value = parts[1]
+
+    if value not in EXAM_TYPES:
+        await query.answer(
+            "❌ نوع امتحان غير صالح.",
+            show_alert=True,
+        )
+        return EDIT_EXAM_TYPE
 
     context.user_data["exam_type"] = value
 
@@ -938,6 +1198,15 @@ async def edit_exam_title(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        EDIT_EXAM_TITLE,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return EDIT_EXAM_TITLE
 
@@ -956,6 +1225,13 @@ async def edit_exam_title(
     stage_id = context.user_data.get(
         "exam_stage_id"
     )
+
+    if not stage_id:
+        await update.message.reply_text(
+            "❌ انتهت جلسة التعديل."
+        )
+        clear_exam_conversation(context)
+        return ConversationHandler.END
 
     response = (
         supabase
@@ -1015,16 +1291,42 @@ async def edit_exam_subject(
 ):
     query = update.callback_query
 
-    value = query.data.split(
+    if query is None or query.from_user is None:
+        return EDIT_EXAM_SUBJECT
+
+    if not await check_exam_access(
+        query,
+        context,
+    ):
+        return EDIT_EXAM_SUBJECT
+
+    parts = query.data.split(
         ":",
         1,
-    )[1]
-
-    context.user_data["exam_subject_id"] = (
-        None
-        if value == "none"
-        else int(value)
     )
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return EDIT_EXAM_SUBJECT
+
+    value = parts[1]
+
+    if value == "none":
+        subject_id = None
+    else:
+        try:
+            subject_id = int(value)
+        except ValueError:
+            await query.answer(
+                "❌ اختيار غير صالح.",
+                show_alert=True,
+            )
+            return EDIT_EXAM_SUBJECT
+
+    context.user_data["exam_subject_id"] = subject_id
 
     await query.answer()
 
@@ -1041,6 +1343,15 @@ async def edit_exam_date(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        EDIT_EXAM_DATE,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return EDIT_EXAM_DATE
 
@@ -1076,6 +1387,15 @@ async def edit_exam_time(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        EDIT_EXAM_TIME,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return EDIT_EXAM_TIME
 
@@ -1119,6 +1439,15 @@ async def edit_exam_notes(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    access = await check_exam_message_access(
+        update,
+        context,
+        EDIT_EXAM_NOTES,
+    )
+
+    if access is not None:
+        return access
+
     if update.message is None:
         return EDIT_EXAM_NOTES
 
@@ -1140,6 +1469,17 @@ async def edit_exam_notes(
         "exam_id"
     )
 
+    stage_id = context.user_data.get(
+        "exam_stage_id"
+    )
+
+    if not exam_id or not stage_id:
+        await update.message.reply_text(
+            "❌ انتهت جلسة التعديل."
+        )
+        clear_exam_conversation(context)
+        return ConversationHandler.END
+
     payload = {
         "subject_id": context.user_data.get(
             "exam_subject_id"
@@ -1157,17 +1497,26 @@ async def edit_exam_notes(
             "exam_time"
         ),
         "notes": notes,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
     }
 
     try:
-        (
+        response = (
             supabase
             .table("exam_dates")
             .update(payload)
             .eq("id", exam_id)
+            .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no updated exam."
+            )
 
     except Exception as exc:
         print(
@@ -1180,22 +1529,11 @@ async def edit_exam_notes(
             "❌ تعذر تعديل الموعد."
         )
 
+        clear_exam_conversation(context)
+
         return ConversationHandler.END
 
-    for key in [
-        "exam_id",
-        "exam_stage_id",
-        "exam_subject_id",
-        "exam_type",
-        "exam_title",
-        "exam_date",
-        "exam_time",
-        "exam_notes",
-    ]:
-        context.user_data.pop(
-            key,
-            None,
-        )
+    clear_exam_conversation(context)
 
     await update.message.reply_text(
         "✅ تم تعديل موعد الامتحان بنجاح."
@@ -1235,21 +1573,36 @@ async def disable_exam(
         )
         return
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
 
     try:
-        (
+        response = (
             supabase
             .table("exam_dates")
             .update({
                 "is_active": False,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
             })
             .eq("id", exam_id)
             .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no updated exam."
+            )
 
     except Exception as exc:
         print(
@@ -1305,21 +1658,36 @@ async def enable_exam(
         )
         return
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
 
     try:
-        (
+        response = (
             supabase
             .table("exam_dates")
             .update({
                 "is_active": True,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
             })
             .eq("id", exam_id)
             .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no updated exam."
+            )
 
     except Exception as exc:
         print(
@@ -1375,8 +1743,15 @@ async def delete_exam(
         )
         return
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -1434,22 +1809,39 @@ async def confirm_delete_exam(
         )
         return
 
-    exam_id = int(parts[1])
-    stage_id = int(parts[2])
+    try:
+        exam_id = int(parts[1])
+        stage_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    now = datetime.now(
+        timezone.utc
+    ).isoformat()
 
     try:
-        (
+        response = (
             supabase
             .table("exam_dates")
             .update({
-                "deleted_at": datetime.utcnow().isoformat(),
+                "deleted_at": now,
                 "is_active": False,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": now,
             })
             .eq("id", exam_id)
             .eq("stage_id", stage_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+
+        if not response.data:
+            raise ValueError(
+                "Supabase returned no deleted exam."
+            )
 
     except Exception as exc:
         print(
@@ -1485,25 +1877,19 @@ async def cancel_exam(
     query = update.callback_query
 
     if query is not None:
+        if not await check_exam_access(
+            query,
+            context,
+        ):
+            return ConversationHandler.END
+
         await query.answer()
+
         await query.edit_message_text(
             "❌ تم إلغاء العملية."
         )
 
-    for key in [
-        "exam_id",
-        "exam_stage_id",
-        "exam_subject_id",
-        "exam_type",
-        "exam_title",
-        "exam_date",
-        "exam_time",
-        "exam_notes",
-    ]:
-        context.user_data.pop(
-            key,
-            None,
-        )
+    clear_exam_conversation(context)
 
     return ConversationHandler.END
 
