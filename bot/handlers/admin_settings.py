@@ -81,6 +81,76 @@ async def _has_settings_permission(
 
 
 # ============================================================
+# Session ownership
+# ============================================================
+
+def _get_setting_owner(
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    setting_data = context.user_data.get(
+        "admin_setting"
+    )
+
+    if not isinstance(setting_data, dict):
+        return None
+
+    return setting_data.get("owner_id")
+
+
+def _is_setting_owner(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+) -> bool:
+    owner_id = _get_setting_owner(context)
+
+    return (
+        owner_id is not None
+        and int(owner_id) == int(user_id)
+    )
+
+
+async def _check_setting_access(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> bool:
+    user = None
+
+    if update.callback_query is not None:
+        user = update.callback_query.from_user
+
+    elif update.message is not None:
+        user = update.message.from_user
+
+    if user is None:
+        return False
+
+    if not await _has_settings_permission(
+        user.id
+    ):
+        if update.callback_query is not None:
+            await update.callback_query.answer(
+                "⛔ ليس لديك صلاحية.",
+                show_alert=True,
+            )
+
+        return False
+
+    if not _is_setting_owner(
+        context,
+        user.id,
+    ):
+        if update.callback_query is not None:
+            await update.callback_query.answer(
+                "⛔ هذه جلسة إعدادات ليست لك.",
+                show_alert=True,
+            )
+
+        return False
+
+    return True
+
+
+# ============================================================
 # Database helpers
 # ============================================================
 
@@ -340,6 +410,12 @@ async def admin_settings(
         None,
     )
 
+    context.user_data[
+        "admin_setting"
+    ] = {
+        "owner_id": query.from_user.id,
+    }
+
     await query.answer()
 
     await query.edit_message_text(
@@ -367,13 +443,10 @@ async def settings_refresh(
     ):
         return ConversationHandler.END
 
-    if not await _has_settings_permission(
-        query.from_user.id
+    if not await _check_setting_access(
+        update,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     await query.answer(
@@ -405,13 +478,10 @@ async def setting_edit(
     ):
         return ConversationHandler.END
 
-    if not await _has_settings_permission(
-        query.from_user.id
+    if not await _check_setting_access(
+        update,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     data = query.data or ""
@@ -440,9 +510,7 @@ async def setting_edit(
 
     context.user_data[
         "admin_setting"
-    ] = {
-        "key": key,
-    }
+    ]["key"] = key
 
     setting_info = SUPPORTED_SETTINGS[key]
 
@@ -520,13 +588,10 @@ async def setting_predefined_value(
     ):
         return ConversationHandler.END
 
-    if not await _has_settings_permission(
-        query.from_user.id
+    if not await _check_setting_access(
+        update,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     data = query.data or ""
@@ -558,6 +623,16 @@ async def setting_predefined_value(
         ":",
         1,
     )[1]
+
+    if value not in (
+        "true",
+        "false",
+    ):
+        await query.answer(
+            "❌ قيمة غير صالحة.",
+            show_alert=True,
+        )
+        return SETTINGS_VALUE
 
     try:
         await _save_setting(
@@ -613,8 +688,9 @@ async def setting_value(
     ):
         return ConversationHandler.END
 
-    if not await _has_settings_permission(
-        message.from_user.id
+    if not await _check_setting_access(
+        update,
+        context,
     ):
         return ConversationHandler.END
 
@@ -717,19 +793,22 @@ async def setting_back(
     ):
         return ConversationHandler.END
 
-    if not await _has_settings_permission(
-        query.from_user.id
+    if not await _check_setting_access(
+        update,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     context.user_data.pop(
         "admin_setting",
         None,
     )
+
+    context.user_data[
+        "admin_setting"
+    ] = {
+        "owner_id": query.from_user.id,
+    }
 
     await query.answer()
 
@@ -752,17 +831,41 @@ async def settings_cancel(
 ):
     query = update.callback_query
 
+    if (
+        query is None
+        or query.from_user is None
+    ):
+        return ConversationHandler.END
+
+    if not await _has_settings_permission(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    if not _is_setting_owner(
+        context,
+        query.from_user.id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إعدادات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
     context.user_data.pop(
         "admin_setting",
         None,
     )
 
-    if query is not None:
-        await query.answer()
+    await query.answer()
 
-        await query.edit_message_text(
-            "❌ تم إغلاق إعدادات LabBase."
-        )
+    await query.edit_message_text(
+        "❌ تم إغلاق إعدادات LabBase."
+    )
 
     return ConversationHandler.END
 
