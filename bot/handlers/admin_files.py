@@ -15,7 +15,10 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+from bot.utils.permissions import (
+    PERMISSION_MANAGE_FILES,
+    has_permission,
+)
 
 
 # =========================
@@ -135,6 +138,81 @@ def extract_telegram_file(message):
         )
 
     return None, None, None
+
+
+async def has_file_permission(user_id):
+    return await has_permission(
+        user_id,
+        PERMISSION_MANAGE_FILES,
+    )
+
+
+def is_file_session_owner(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+):
+    return (
+        context.user_data.get("admin_files_owner_id")
+        == user_id
+    )
+
+
+async def check_file_access(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if query is None or query.from_user is None:
+        return False
+
+    user_id = query.from_user.id
+
+    if not await has_file_permission(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الملفات.",
+            show_alert=True,
+        )
+        return False
+
+    if not is_file_session_owner(
+        context,
+        user_id,
+    ):
+        await query.answer(
+            "⛔ هذه جلسة إدارة الملفات ليست لك.",
+            show_alert=True,
+        )
+        return False
+
+    return True
+
+
+async def check_file_message_access(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    message = update.message
+
+    if message is None or message.from_user is None:
+        return False
+
+    user_id = message.from_user.id
+
+    if not await has_file_permission(user_id):
+        await message.reply_text(
+            "⛔ ليس لديك صلاحية إدارة الملفات."
+        )
+        return False
+
+    if not is_file_session_owner(
+        context,
+        user_id,
+    ):
+        await message.reply_text(
+            "⛔ هذه جلسة إدارة الملفات ليست لك."
+        )
+        return False
+
+    return True
 
 
 # =========================
@@ -326,7 +404,7 @@ def after_save_keyboard(
             InlineKeyboardButton(
                 text="🛠️ لوحة الإدارة",
                 callback_data="admin_back",
-            )
+            ),
         ],
     ])
 
@@ -419,12 +497,20 @@ async def admin_files(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_file_permission(
+        query.from_user.id
+    ):
         await query.answer(
-            "⛔ ليس لديك صلاحية.",
+            "⛔ ليس لديك صلاحية إدارة الملفات.",
             show_alert=True,
         )
         return
+
+    clear_file_conversation(context)
+
+    context.user_data[
+        "admin_files_owner_id"
+    ] = query.from_user.id
 
     await query.answer()
 
@@ -480,14 +566,10 @@ async def admin_file_stage(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -552,14 +634,10 @@ async def admin_file_subject(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -617,14 +695,10 @@ async def admin_file_subjects(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -689,14 +763,10 @@ async def admin_file_sections(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -754,14 +824,10 @@ async def admin_file_section(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -851,14 +917,10 @@ async def admin_file_list(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -933,14 +995,10 @@ async def manage_file(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1051,14 +1109,10 @@ async def start_add_file(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return ConversationHandler.END
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return ConversationHandler.END
 
     parts = query.data.split(":")
@@ -1081,11 +1135,25 @@ async def start_add_file(
         )
         return ConversationHandler.END
 
+    owner_id = query.from_user.id
+
     clear_file_conversation(context)
 
-    context.user_data["admin_file_stage_id"] = stage_id
-    context.user_data["admin_file_subject_id"] = subject_id
-    context.user_data["admin_file_section_type"] = section_type
+    context.user_data[
+        "admin_files_owner_id"
+    ] = owner_id
+
+    context.user_data[
+        "admin_file_stage_id"
+    ] = stage_id
+
+    context.user_data[
+        "admin_file_subject_id"
+    ] = subject_id
+
+    context.user_data[
+        "admin_file_section_type"
+    ] = section_type
 
     await query.answer()
 
@@ -1102,6 +1170,12 @@ async def receive_add_file_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1132,6 +1206,12 @@ async def receive_add_file_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1159,6 +1239,12 @@ async def receive_add_file_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1200,6 +1286,12 @@ async def receive_add_file_upload(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None:
@@ -1219,20 +1311,25 @@ async def receive_add_file_upload(
     stage_id = context.user_data.get(
         "admin_file_stage_id"
     )
+
     subject_id = context.user_data.get(
         "admin_file_subject_id"
     )
+
     section_type = normalize_section_type(
         context.user_data.get(
             "admin_file_section_type"
         )
     )
+
     name = context.user_data.get(
         "admin_file_name"
     )
+
     description = context.user_data.get(
         "admin_file_description"
     )
+
     sort_order = context.user_data.get(
         "admin_file_order"
     )
@@ -1330,14 +1427,10 @@ async def start_edit_file(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return ConversationHandler.END
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return ConversationHandler.END
 
     parts = query.data.split(":")
@@ -1373,7 +1466,13 @@ async def start_edit_file(
         )
         return ConversationHandler.END
 
+    owner_id = query.from_user.id
+
     clear_file_conversation(context)
+
+    context.user_data[
+        "admin_files_owner_id"
+    ] = owner_id
 
     context.user_data["admin_file_id"] = file_id
     context.user_data["admin_file_stage_id"] = stage_id
@@ -1381,10 +1480,14 @@ async def start_edit_file(
     context.user_data["admin_file_section_type"] = section_type
 
     context.user_data["admin_file_name"] = file["name"]
-    context.user_data["admin_file_description"] = file.get(
-        "description"
-    )
-    context.user_data["admin_file_order"] = file.get(
+
+    context.user_data[
+        "admin_file_description"
+    ] = file.get("description")
+
+    context.user_data[
+        "admin_file_order"
+    ] = file.get(
         "sort_order",
         0,
     )
@@ -1404,6 +1507,12 @@ async def receive_edit_file_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1446,6 +1555,12 @@ async def receive_edit_file_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1477,6 +1592,12 @@ async def receive_edit_file_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_file_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None or message.text is None:
@@ -1503,20 +1624,25 @@ async def receive_edit_file_order(
     file_id = context.user_data.get(
         "admin_file_id"
     )
+
     stage_id = context.user_data.get(
         "admin_file_stage_id"
     )
+
     subject_id = context.user_data.get(
         "admin_file_subject_id"
     )
+
     section_type = normalize_section_type(
         context.user_data.get(
             "admin_file_section_type"
         )
     )
+
     name = context.user_data.get(
         "admin_file_name"
     )
+
     description = context.user_data.get(
         "admin_file_description"
     )
@@ -1532,6 +1658,13 @@ async def receive_edit_file_order(
     if section_type not in VALID_SECTION_TYPES:
         await message.reply_text(
             "❌ نوع القسم غير صالح."
+        )
+        clear_file_conversation(context)
+        return ConversationHandler.END
+
+    if not name:
+        await message.reply_text(
+            "❌ اسم الملف مفقود."
         )
         clear_file_conversation(context)
         return ConversationHandler.END
@@ -1594,14 +1727,10 @@ async def set_file_status(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1714,14 +1843,10 @@ async def delete_file(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1781,14 +1906,10 @@ async def confirm_delete_file(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
+    if not await check_file_access(
+        query,
+        context,
+    ):
         return
 
     parts = query.data.split(":")
@@ -1882,6 +2003,24 @@ async def cancel_file_operation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if update.message and update.message.from_user:
+        user_id = update.message.from_user.id
+
+        if not await has_file_permission(user_id):
+            await update.message.reply_text(
+                "⛔ ليس لديك صلاحية إدارة الملفات."
+            )
+            return ConversationHandler.END
+
+        if not is_file_session_owner(
+            context,
+            user_id,
+        ):
+            await update.message.reply_text(
+                "⛔ هذه جلسة إدارة الملفات ليست لك."
+            )
+            return ConversationHandler.END
+
     clear_file_conversation(context)
 
     if update.message:
@@ -1978,12 +2117,18 @@ async def back_to_admin_files(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_file_permission(
+        query.from_user.id
+    ):
         await query.answer(
-            "⛔ ليس لديك صلاحية.",
+            "⛔ ليس لديك صلاحية إدارة الملفات.",
             show_alert=True,
         )
         return
+
+    context.user_data[
+        "admin_files_owner_id"
+    ] = query.from_user.id
 
     await query.answer()
 
