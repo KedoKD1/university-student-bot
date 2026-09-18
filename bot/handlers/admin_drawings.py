@@ -11,7 +11,10 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+from bot.utils.permissions import (
+    PERMISSION_MANAGE_DRAWINGS,
+    has_permission,
+)
 
 
 # =========================
@@ -87,6 +90,13 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+async def has_drawing_permission(user_id):
+    return await has_permission(
+        user_id,
+        PERMISSION_MANAGE_DRAWINGS,
+    )
+
+
 def clear_drawing_conversation(context):
     keys = [
         "admin_drawing_stage_id",
@@ -96,10 +106,76 @@ def clear_drawing_conversation(context):
         "admin_drawing_name",
         "admin_drawing_description",
         "admin_drawing_order",
+        "admin_drawing_owner_id",
     ]
 
     for key in keys:
         context.user_data.pop(key, None)
+
+
+def is_drawing_session_owner(context, user_id):
+    return (
+        context.user_data.get("admin_drawing_owner_id")
+        == user_id
+    )
+
+
+async def check_drawing_access(query, context):
+    if query is None or query.from_user is None:
+        return False
+
+    user_id = query.from_user.id
+
+    if not await has_drawing_permission(user_id):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الرسومات.",
+            show_alert=True,
+        )
+        return False
+
+    owner_id = context.user_data.get(
+        "admin_drawing_owner_id"
+    )
+
+    if owner_id is not None and owner_id != user_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return False
+
+    return True
+
+
+async def check_drawing_message_access(
+    update,
+    context,
+):
+    if update.effective_user is None:
+        return False
+
+    user_id = update.effective_user.id
+
+    if not await has_drawing_permission(user_id):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ ليس لديك صلاحية إدارة الرسومات."
+            )
+
+        return False
+
+    if not is_drawing_session_owner(
+        context,
+        user_id,
+    ):
+        if update.message:
+            await update.message.reply_text(
+                "⛔ هذه جلسة إدارة الرسومات ليست لك."
+            )
+
+        return False
+
+    return True
 
 
 def extract_telegram_file(message):
@@ -140,14 +216,18 @@ def extract_telegram_file(message):
 # Keyboards
 # =========================
 
-def section_keyboard(stage_id, subject_id):
+def section_keyboard(
+    stage_id,
+    subject_id,
+    owner_id,
+):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="🧪 العملي",
                 callback_data=(
                     f"admin_drawing_section:"
-                    f"practical:{subject_id}:{stage_id}"
+                    f"practical:{subject_id}:{stage_id}:{owner_id}"
                 ),
             )
         ],
@@ -156,7 +236,7 @@ def section_keyboard(stage_id, subject_id):
                 text="⬅️ رجوع للمواد",
                 callback_data=(
                     f"admin_drawing_subjects:"
-                    f"{stage_id}"
+                    f"{stage_id}:{owner_id}"
                 ),
             )
         ],
@@ -168,6 +248,7 @@ def drawing_list_keyboard(
     stage_id,
     subject_id,
     section_type,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -188,7 +269,8 @@ def drawing_list_keyboard(
                     f"{drawing['id']}:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -200,7 +282,8 @@ def drawing_list_keyboard(
                 f"add_drawing:"
                 f"{stage_id}:"
                 f"{subject_id}:"
-                f"{section_type}"
+                f"{section_type}:"
+                f"{owner_id}"
             ),
         )
     ])
@@ -211,7 +294,8 @@ def drawing_list_keyboard(
             callback_data=(
                 f"admin_drawing_sections:"
                 f"{stage_id}:"
-                f"{subject_id}"
+                f"{subject_id}:"
+                f"{owner_id}"
             ),
         )
     ])
@@ -225,6 +309,7 @@ def drawing_manage_keyboard(
     subject_id,
     section_type,
     is_active,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -236,7 +321,8 @@ def drawing_manage_keyboard(
             f"{drawing_id}:"
             f"{stage_id}:"
             f"{subject_id}:"
-            f"{section_type}"
+            f"{section_type}:"
+            f"{owner_id}"
         )
 
     else:
@@ -247,7 +333,8 @@ def drawing_manage_keyboard(
             f"{drawing_id}:"
             f"{stage_id}:"
             f"{subject_id}:"
-            f"{section_type}"
+            f"{section_type}:"
+            f"{owner_id}"
         )
 
     return InlineKeyboardMarkup([
@@ -259,7 +346,8 @@ def drawing_manage_keyboard(
                     f"{drawing_id}:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -277,7 +365,8 @@ def drawing_manage_keyboard(
                     f"{drawing_id}:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -288,7 +377,8 @@ def drawing_manage_keyboard(
                     f"admin_drawing_list:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             )
         ],
@@ -300,6 +390,7 @@ def delete_confirm_keyboard(
     stage_id,
     subject_id,
     section_type,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -312,7 +403,8 @@ def delete_confirm_keyboard(
                     f"{drawing_id}:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             ),
             InlineKeyboardButton(
@@ -322,7 +414,8 @@ def delete_confirm_keyboard(
                     f"{drawing_id}:"
                     f"{stage_id}:"
                     f"{subject_id}:"
-                    f"{section_type}"
+                    f"{section_type}:"
+                    f"{owner_id}"
                 ),
             ),
         ],
@@ -424,14 +517,22 @@ async def admin_drawings(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
+    if not await has_drawing_permission(
         query.from_user.id
     ):
         await query.answer(
-            "⛔ ليس لديك صلاحية.",
+            "⛔ ليس لديك صلاحية إدارة الرسومات.",
             show_alert=True,
         )
         return
+
+    clear_drawing_conversation(context)
+
+    owner_id = query.from_user.id
+
+    context.user_data[
+        "admin_drawing_owner_id"
+    ] = owner_id
 
     await query.answer()
 
@@ -470,7 +571,8 @@ async def admin_drawings(
                 ),
                 callback_data=(
                     f"admin_drawing_stage:"
-                    f"{stage['id']}"
+                    f"{stage['id']}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -478,7 +580,10 @@ async def admin_drawings(
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للوحة الإدارة",
-            callback_data="admin_back",
+            callback_data=(
+                f"admin_drawing_back:"
+                f"{owner_id}"
+            ),
         )
     ])
 
@@ -488,6 +593,66 @@ async def admin_drawings(
         reply_markup=InlineKeyboardMarkup(
             keyboard
         ),
+    )
+
+
+async def admin_drawing_back(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        owner_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not await has_drawing_permission(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الرسومات.",
+            show_alert=True,
+        )
+        return
+
+    clear_drawing_conversation(context)
+
+    await query.answer()
+
+    await query.edit_message_text(
+        "⬅️ تم الرجوع إلى لوحة الإدارة.",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text="⬅️ لوحة الإدارة",
+                    callback_data="admin_back",
+                )
+            ]
+        ]),
     )
 
 
@@ -504,18 +669,15 @@ async def admin_drawing_stage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -523,6 +685,22 @@ async def admin_drawing_stage(
         return
 
     stage_id = parts[1]
+
+    try:
+        owner_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -548,7 +726,8 @@ async def admin_drawing_stage(
                 callback_data=(
                     f"admin_drawing_subject:"
                     f"{subject['id']}:"
-                    f"{stage_id}"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -556,13 +735,115 @@ async def admin_drawing_stage(
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للمراحل",
-            callback_data="admin_drawings",
+            callback_data=(
+                f"admin_drawings_owner:"
+                f"{owner_id}"
+            ),
         )
     ])
 
     await query.edit_message_text(
         "🎨 إدارة الرسومات\n\n"
         "اختر المادة:",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        ),
+    )
+
+
+async def admin_drawings_owner(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if query is None or query.from_user is None:
+        return
+
+    parts = query.data.split(":")
+
+    if len(parts) != 2:
+        await query.answer(
+            "❌ اختيار غير صالح.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        owner_id = int(parts[1])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if not await has_drawing_permission(
+        query.from_user.id
+    ):
+        await query.answer(
+            "⛔ ليس لديك صلاحية إدارة الرسومات.",
+            show_alert=True,
+        )
+        return
+
+    await query.answer()
+
+    response = (
+        supabase
+        .table("stages")
+        .select(
+            "id, stage_number, is_active"
+        )
+        .order("stage_number")
+        .execute()
+    )
+
+    stages = response.data or []
+
+    keyboard = []
+
+    for stage in stages:
+        status = (
+            "🟢"
+            if stage["is_active"]
+            else "🔴"
+        )
+
+        keyboard.append([
+            InlineKeyboardButton(
+                text=(
+                    f"{status} "
+                    f"المرحلة {stage['stage_number']}"
+                ),
+                callback_data=(
+                    f"admin_drawing_stage:"
+                    f"{stage['id']}:"
+                    f"{owner_id}"
+                ),
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ رجوع للوحة الإدارة",
+            callback_data=(
+                f"admin_drawing_back:"
+                f"{owner_id}"
+            ),
+        )
+    ])
+
+    await query.edit_message_text(
+        "🎨 إدارة الرسومات\n\n"
+        "اختر المرحلة:",
         reply_markup=InlineKeyboardMarkup(
             keyboard
         ),
@@ -578,18 +859,15 @@ async def admin_drawing_subjects(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 3:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -597,6 +875,22 @@ async def admin_drawing_subjects(
         return
 
     stage_id = parts[1]
+
+    try:
+        owner_id = int(parts[2])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -622,7 +916,8 @@ async def admin_drawing_subjects(
                 callback_data=(
                     f"admin_drawing_subject:"
                     f"{subject['id']}:"
-                    f"{stage_id}"
+                    f"{stage_id}:"
+                    f"{owner_id}"
                 ),
             )
         ])
@@ -630,7 +925,10 @@ async def admin_drawing_subjects(
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع للمراحل",
-            callback_data="admin_drawings",
+            callback_data=(
+                f"admin_drawings_owner:"
+                f"{owner_id}"
+            ),
         )
     ])
 
@@ -656,18 +954,15 @@ async def admin_drawing_subject(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 4:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -676,6 +971,22 @@ async def admin_drawing_subject(
 
     subject_id = parts[1]
     stage_id = parts[2]
+
+    try:
+        owner_id = int(parts[3])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     await query.answer()
 
@@ -706,6 +1017,7 @@ async def admin_drawing_subject(
         reply_markup=section_keyboard(
             stage_id,
             subject_id,
+            owner_id,
         ),
     )
 
@@ -723,18 +1035,15 @@ async def admin_drawing_sections(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 4:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -744,6 +1053,22 @@ async def admin_drawing_sections(
     stage_id = parts[1]
     subject_id = parts[2]
 
+    try:
+        owner_id = int(parts[3])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
+
     await query.answer()
 
     await query.edit_message_text(
@@ -752,6 +1077,7 @@ async def admin_drawing_sections(
         reply_markup=section_keyboard(
             stage_id,
             subject_id,
+            owner_id,
         ),
     )
 
@@ -765,18 +1091,15 @@ async def admin_drawing_section(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 4:
+    if len(parts) != 5:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -789,6 +1112,22 @@ async def admin_drawing_section(
 
     subject_id = parts[2]
     stage_id = parts[3]
+
+    try:
+        owner_id = int(parts[4])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -819,6 +1158,7 @@ async def admin_drawing_section(
             stage_id,
             subject_id,
             section_type,
+            owner_id,
         ),
     )
 
@@ -832,18 +1172,15 @@ async def admin_drawing_list(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 4:
+    if len(parts) != 5:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -856,6 +1193,22 @@ async def admin_drawing_list(
     section_type = normalize_section_type(
         parts[3]
     )
+
+    try:
+        owner_id = int(parts[4])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -882,6 +1235,7 @@ async def admin_drawing_list(
             stage_id,
             subject_id,
             section_type,
+            owner_id,
         ),
     )
 
@@ -899,18 +1253,15 @@ async def manage_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 5:
+    if len(parts) != 6:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -924,6 +1275,22 @@ async def manage_drawing(
     section_type = normalize_section_type(
         parts[4]
     )
+
+    try:
+        owner_id = int(parts[5])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -970,6 +1337,7 @@ async def manage_drawing(
             subject_id,
             section_type,
             drawing["is_active"],
+            owner_id,
         ),
     )
 
@@ -987,18 +1355,15 @@ async def start_add_drawing(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     parts = query.data.split(":")
 
-    if len(parts) != 4:
+    if len(parts) != 5:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1011,6 +1376,22 @@ async def start_add_drawing(
     section_type = normalize_section_type(
         parts[3]
     )
+
+    try:
+        owner_id = int(parts[4])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -1025,6 +1406,7 @@ async def start_add_drawing(
         "admin_drawing_stage_id": stage_id,
         "admin_drawing_subject_id": subject_id,
         "admin_drawing_section_type": section_type,
+        "admin_drawing_owner_id": owner_id,
     })
 
     await query.answer()
@@ -1041,6 +1423,12 @@ async def receive_drawing_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return ADD_DRAWING_NAME
 
@@ -1072,6 +1460,12 @@ async def receive_drawing_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return ADD_DRAWING_DESCRIPTION
 
@@ -1095,6 +1489,12 @@ async def receive_drawing_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return ADD_DRAWING_ORDER
 
@@ -1134,6 +1534,12 @@ async def receive_drawing_upload(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     message = update.message
 
     if message is None:
@@ -1250,18 +1656,15 @@ async def start_edit_drawing(
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return ConversationHandler.END
 
     parts = query.data.split(":")
 
-    if len(parts) != 5:
+    if len(parts) != 6:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1275,6 +1678,22 @@ async def start_edit_drawing(
     section_type = normalize_section_type(
         parts[4]
     )
+
+    try:
+        owner_id = int(parts[5])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return ConversationHandler.END
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -1304,6 +1723,7 @@ async def start_edit_drawing(
         "admin_drawing_stage_id": stage_id,
         "admin_drawing_subject_id": subject_id,
         "admin_drawing_section_type": section_type,
+        "admin_drawing_owner_id": owner_id,
     })
 
     await query.answer()
@@ -1322,6 +1742,12 @@ async def receive_edit_drawing_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return EDIT_DRAWING_NAME
 
@@ -1353,6 +1779,12 @@ async def receive_edit_drawing_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return EDIT_DRAWING_DESCRIPTION
 
@@ -1376,6 +1808,12 @@ async def receive_edit_drawing_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     if not update.message or not update.message.text:
         return EDIT_DRAWING_ORDER
 
@@ -1484,6 +1922,7 @@ async def disable_drawing(
 ):
     return await toggle_drawing(
         update,
+        context,
         disable=True,
     )
 
@@ -1494,12 +1933,14 @@ async def enable_drawing(
 ):
     return await toggle_drawing(
         update,
+        context,
         disable=False,
     )
 
 
 async def toggle_drawing(
     update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
     disable=False,
 ):
     query = update.callback_query
@@ -1507,18 +1948,15 @@ async def toggle_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 5:
+    if len(parts) != 6:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1532,6 +1970,29 @@ async def toggle_drawing(
     section_type = normalize_section_type(
         parts[4]
     )
+
+    try:
+        owner_id = int(parts[5])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ قسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     drawing = await get_drawing(
         drawing_id,
@@ -1608,6 +2069,7 @@ async def toggle_drawing(
             subject_id,
             section_type,
             drawing["is_active"],
+            owner_id,
         ),
     )
 
@@ -1625,18 +2087,15 @@ async def delete_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 5:
+    if len(parts) != 6:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1650,6 +2109,29 @@ async def delete_drawing(
     section_type = normalize_section_type(
         parts[4]
     )
+
+    try:
+        owner_id = int(parts[5])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
+
+    if section_type not in VALID_SECTION_TYPES:
+        await query.answer(
+            "❌ قسم غير صالح.",
+            show_alert=True,
+        )
+        return
 
     drawing = await get_drawing(
         drawing_id,
@@ -1675,6 +2157,7 @@ async def delete_drawing(
             stage_id,
             subject_id,
             section_type,
+            owner_id,
         ),
     )
 
@@ -1688,18 +2171,15 @@ async def confirm_delete_drawing(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(
-        query.from_user.id
+    if not await check_drawing_access(
+        query,
+        context,
     ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
         return
 
     parts = query.data.split(":")
 
-    if len(parts) != 5:
+    if len(parts) != 6:
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1713,6 +2193,22 @@ async def confirm_delete_drawing(
     section_type = normalize_section_type(
         parts[4]
     )
+
+    try:
+        owner_id = int(parts[5])
+    except ValueError:
+        await query.answer(
+            "❌ جلسة غير صالحة.",
+            show_alert=True,
+        )
+        return
+
+    if query.from_user.id != owner_id:
+        await query.answer(
+            "⛔ هذه جلسة إدارة الرسومات ليست لك.",
+            show_alert=True,
+        )
+        return
 
     if section_type not in VALID_SECTION_TYPES:
         await query.answer(
@@ -1769,6 +2265,7 @@ async def confirm_delete_drawing(
             stage_id,
             subject_id,
             section_type,
+            owner_id,
         ),
     )
 
@@ -1781,6 +2278,12 @@ async def cancel_drawing(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not await check_drawing_message_access(
+        update,
+        context,
+    ):
+        return ConversationHandler.END
+
     clear_drawing_conversation(
         context
     )
