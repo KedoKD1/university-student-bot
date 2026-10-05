@@ -8,6 +8,7 @@ from telegram import (
 
 from telegram.ext import (
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
     MessageHandler,
@@ -19,6 +20,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_GRADES,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -101,7 +103,7 @@ def clear_grade_conversation(context):
     ]
 
     for key in keys:
-        context.user_data.pop(key, None)
+        context.admin_data.pop(key, None)
 
 
 def is_grade_session_owner(
@@ -109,7 +111,7 @@ def is_grade_session_owner(
     user_id,
 ):
     return (
-        context.user_data.get(
+        context.admin_data.get(
             "admin_grade_owner_id"
         )
         == user_id
@@ -173,7 +175,11 @@ async def check_grade_message_access(
 
     user_id = user.id
 
+    if not is_grade_session_owner(context, user_id):
+        return False
+
     if not await can_manage_grades(user_id):
+        clear_grade_conversation(context)
         return False
 
     return is_grade_session_owner(
@@ -392,10 +398,11 @@ def delete_grade_keyboard(
 # Permission helper
 # ============================================================
 
-async def can_manage_grades(user_id):
+async def can_manage_grades(user_id, *, refresh=True):
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_GRADES,
+        refresh=refresh,
     )
 
 
@@ -406,6 +413,8 @@ async def can_manage_grades(user_id):
 async def admin_grades(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
+    *,
+    refresh=True,
 ):
     query = update.callback_query
 
@@ -414,7 +423,7 @@ async def admin_grades(
 
     user_id = query.from_user.id
 
-    if not await can_manage_grades(user_id):
+    if not await can_manage_grades(user_id, refresh=refresh):
         await query.answer(
             "⛔ ليس لديك صلاحية إدارة الدرجات.",
             show_alert=True,
@@ -423,7 +432,7 @@ async def admin_grades(
 
     clear_grade_conversation(context)
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_owner_id"
     ] = user_id
 
@@ -512,7 +521,7 @@ async def admin_grades_back(
         )
         return
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_owner_id"
     ] = owner_id
 
@@ -574,6 +583,8 @@ async def admin_grade_stage(
         )
         return
 
+    context.admin_data.setdefault("admin_grade_owner_id", owner_id)
+
     if not is_grade_session_owner(
         context,
         query.from_user.id,
@@ -625,8 +636,10 @@ async def show_grade_list(
         )
         return
 
+    # Its callers refreshed access already; this helper only renders the list.
     if not await can_manage_grades(
-        query.from_user.id
+        query.from_user.id,
+        refresh=False,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -724,6 +737,8 @@ async def admin_grade_list(
         )
         return
 
+    context.admin_data.setdefault("admin_grade_owner_id", owner_id)
+
     if not is_grade_session_owner(
         context,
         query.from_user.id,
@@ -792,6 +807,8 @@ async def admin_grade_list_back(
         )
         return
 
+    context.admin_data.setdefault("admin_grade_owner_id", owner_id)
+
     if not is_grade_session_owner(
         context,
         query.from_user.id,
@@ -807,6 +824,7 @@ async def admin_grade_list_back(
     await admin_grades(
         update,
         context,
+        refresh=False,
     )
 
 
@@ -984,11 +1002,11 @@ async def add_grade(
         )
         return ConversationHandler.END
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_stage_id"
     ] = stage_id
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_owner_id"
     ] = owner_id
 
@@ -1013,6 +1031,8 @@ async def add_grade_name(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return ADD_GRADE_NAME
 
     name = normalize_text(
@@ -1026,7 +1046,7 @@ async def add_grade_name(
         )
         return ADD_GRADE_NAME
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_name"
     ] = name
 
@@ -1049,13 +1069,15 @@ async def add_grade_description(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return ADD_GRADE_DESCRIPTION
 
     description = normalize_description(
         update.message.text or ""
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_description"
     ] = description
 
@@ -1078,6 +1100,8 @@ async def add_grade_upload(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return ADD_GRADE_UPLOAD
 
     (
@@ -1095,15 +1119,15 @@ async def add_grade_upload(
         )
         return ADD_GRADE_UPLOAD
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_grade_stage_id"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_grade_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_grade_description"
     )
 
@@ -1249,15 +1273,15 @@ async def edit_grade(
 
     grade_file = files[0]
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_file_id"
     ] = file_id
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_stage_id"
     ] = stage_id
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_owner_id"
     ] = owner_id
 
@@ -1284,6 +1308,8 @@ async def edit_grade_name(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return EDIT_GRADE_NAME
 
     name = normalize_text(
@@ -1296,7 +1322,7 @@ async def edit_grade_name(
         )
         return EDIT_GRADE_NAME
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_name"
     ] = name
 
@@ -1319,21 +1345,23 @@ async def edit_grade_description(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return EDIT_GRADE_DESCRIPTION
 
     description = normalize_description(
         update.message.text or ""
     )
 
-    file_id = context.user_data.get(
+    file_id = context.admin_data.get(
         "admin_grade_file_id"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_grade_stage_id"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_grade_name"
     )
 
@@ -1455,15 +1483,15 @@ async def replace_grade(
         )
         return ConversationHandler.END
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_file_id"
     ] = file_id
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_stage_id"
     ] = stage_id
 
-    context.user_data[
+    context.admin_data[
         "admin_grade_owner_id"
     ] = owner_id
 
@@ -1488,6 +1516,8 @@ async def replace_grade_upload(
         update,
         context,
     ):
+        if context.admin_data.get("admin_grade_owner_id") is None:
+            return ConversationHandler.END
         return REPLACE_GRADE_UPLOAD
 
     (
@@ -1505,11 +1535,11 @@ async def replace_grade_upload(
         )
         return REPLACE_GRADE_UPLOAD
 
-    file_id = context.user_data.get(
+    file_id = context.admin_data.get(
         "admin_grade_file_id"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_grade_stage_id"
     )
 
@@ -1889,6 +1919,50 @@ async def confirm_delete_grade(
 # Conversation Handler
 # ============================================================
 
+async def cancel_grade(update, context):
+    user = update.effective_user
+    if user is None or not is_grade_session_owner(context, user.id):
+        return None
+    allowed = await can_manage_grades(user.id)
+    clear_grade_conversation(context)
+    if update.message:
+        await update.message.reply_text(
+            "❌ تم إلغاء العملية." if allowed else "⛔ ليس لديك صلاحية."
+        )
+    return ConversationHandler.END
+
+
+async def back_from_grade_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("admin_grade_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if prefix in {'admin_grade_stage', 'admin_grade_list_back', 'admin_grades_back', 'admin_grade_list'} and not await require_callback_owner(query):
+        return None
+    if not await can_manage_grades(user.id):
+        clear_grade_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_grades": admin_grades,
+        "admin_grade_stage": admin_grade_stage,
+        "admin_grade_list": admin_grade_list,
+        "admin_grade_list_back": admin_grade_list_back,
+        "admin_grades_back": admin_grades_back,
+        "admin_back": admin_back,
+    }
+    clear_grade_conversation(context)
+    context.admin_data["admin_grade_owner_id"] = user.id
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
+
 def grade_conversation_handler():
     return ConversationHandler(
         entry_points=[
@@ -1949,7 +2023,10 @@ def grade_conversation_handler():
                 )
             ],
         },
-        fallbacks=[],
+        fallbacks=[
+            CommandHandler("cancel", cancel_grade),
+            CallbackQueryHandler(back_from_grade_operation, pattern='^(?:admin_grades$|admin_grade_stage:|admin_grade_list:|admin_grade_list_back:|admin_grades_back:|admin_back$)'),
+        ],
         per_user=True,
         per_chat=True,
     )

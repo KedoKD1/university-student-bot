@@ -22,6 +22,9 @@ async def permission_guard(
 
     callback_data = query.data or ""
 
+    if not isinstance(callback_data, str):
+        raise ApplicationHandlerStop
+
     if DEBUG_ENABLED:
         logger.info(
             "[PERMISSION GUARD] CALLBACK RECEIVED | "
@@ -65,12 +68,18 @@ async def permission_guard(
                 callback_data,
             )
 
+        raise ApplicationHandlerStop
+
+    # These destinations enforce view_admin themselves. Let an active
+    # conversation clear its owned operation before a destination denial.
+    if callback_data in {"admin_back", "admin_tools"}:
         return
 
     try:
         allowed = await has_permission(
             user.id,
             permission,
+            refresh=True,
         )
 
         if DEBUG_ENABLED:
@@ -94,7 +103,7 @@ async def permission_guard(
             exc_info=True,
         )
 
-        raise
+        raise ApplicationHandlerStop from exc
 
     if allowed:
         if DEBUG_ENABLED:

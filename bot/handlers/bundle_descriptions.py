@@ -15,6 +15,7 @@ from telegram.ext import (
 from bot.database.client import supabase
 from bot.utils.permissions import (
     has_permission,
+    require_callback_owner,
     PERMISSION_MANAGE_DESCRIPTIONS,
 )
 
@@ -24,18 +25,18 @@ DESC_SUBJECT = 22
 DESC_TEXT = 23
 
 
-def description_type_keyboard():
+def description_type_keyboard(owner_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="📄 وصف جميع الملفات",
-                callback_data="bundle_desc_type:files",
+                callback_data=f'bundle_desc_type:files:{owner_id}',
             )
         ],
         [
             InlineKeyboardButton(
                 text="📝 وصف جميع الملخصات",
-                callback_data="bundle_desc_type:summaries",
+                callback_data=f'bundle_desc_type:summaries:{owner_id}',
             )
         ],
         [
@@ -45,6 +46,11 @@ def description_type_keyboard():
             )
         ],
     ])
+
+
+def clear_description_conversation(context):
+    for key in ("bundle_desc_type", "bundle_desc_stage_id", "bundle_desc_subject_id", "bundle_desc_owner_id"):
+        context.admin_data.pop(key, None)
 
 
 async def bundle_descriptions(
@@ -61,6 +67,7 @@ async def bundle_descriptions(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -68,14 +75,15 @@ async def bundle_descriptions(
         )
         return
 
-    context.user_data["bundle_desc_owner_id"] = user_id
+    clear_description_conversation(context)
+    context.admin_data["bundle_desc_owner_id"] = user_id
 
     await query.answer()
 
     await query.edit_message_text(
         "📝 أوصاف الإرسال\n\n"
         "اختر الوصف الذي تريد إدارته:",
-        reply_markup=description_type_keyboard(),
+        reply_markup=description_type_keyboard(user_id),
     )
 
 
@@ -85,7 +93,11 @@ async def choose_description_type(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     user_id = query.from_user.id
@@ -93,14 +105,16 @@ async def choose_description_type(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
@@ -112,9 +126,9 @@ async def choose_description_type(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
         )
-        return ConversationHandler.END
+        return None
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if (
         len(parts) != 2
@@ -127,11 +141,15 @@ async def choose_description_type(
             "❌ اختيار غير صالح.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
+
+    clear_description_conversation(context)
+    context.admin_data["bundle_desc_owner_id"] = user_id
 
     content_type = parts[1]
 
-    context.user_data["bundle_desc_type"] = content_type
+    context.admin_data["bundle_desc_type"] = content_type
 
     await query.answer()
 
@@ -157,7 +175,7 @@ async def choose_description_type(
                     f"المرحلة {stage['stage_number']}"
                 ),
                 callback_data=(
-                    f"bundle_desc_stage:{stage['id']}"
+                    f"bundle_desc_stage:{stage['id']}:{user_id}"
                 ),
             )
         ])
@@ -165,7 +183,7 @@ async def choose_description_type(
     keyboard.append([
         InlineKeyboardButton(
             text="❌ إلغاء",
-            callback_data="bundle_desc_cancel",
+            callback_data=f'bundle_desc_cancel:{user_id}',
         )
     ])
 
@@ -190,19 +208,25 @@ async def choose_description_stage(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     user_id = query.from_user.id
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
-    if (
-        owner_id is not None
-        and user_id != owner_id
-    ):
+    if owner_id is None:
+        clear_description_conversation(context)
+        await query.answer("❌ انتهت بيانات العملية.", show_alert=True)
+        return ConversationHandler.END
+
+    if user_id != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
@@ -212,14 +236,16 @@ async def choose_description_stage(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 2:
         await query.answer(
@@ -230,7 +256,7 @@ async def choose_description_stage(
 
     stage_id = parts[1]
 
-    content_type = context.user_data.get(
+    content_type = context.admin_data.get(
         "bundle_desc_type"
     )
 
@@ -242,9 +268,10 @@ async def choose_description_stage(
             "❌ انتهت بيانات العملية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
-    context.user_data[
+    context.admin_data[
         "bundle_desc_stage_id"
     ] = stage_id
 
@@ -272,7 +299,7 @@ async def choose_description_stage(
             InlineKeyboardButton(
                 text=f"📘 {subject['name']}",
                 callback_data=(
-                    f"bundle_desc_subject:{subject['id']}"
+                    f"bundle_desc_subject:{subject['id']}:{user_id}"
                 ),
             )
         ])
@@ -280,14 +307,14 @@ async def choose_description_stage(
     keyboard.append([
         InlineKeyboardButton(
             text="⬅️ رجوع",
-            callback_data="bundle_desc_back_stage",
+            callback_data=f'bundle_desc_back_stage:{user_id}',
         )
     ])
 
     keyboard.append([
         InlineKeyboardButton(
             text="❌ إلغاء",
-            callback_data="bundle_desc_cancel",
+            callback_data=f'bundle_desc_cancel:{user_id}',
         )
     ])
 
@@ -312,19 +339,25 @@ async def choose_description_subject(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     user_id = query.from_user.id
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
-    if (
-        owner_id is not None
-        and user_id != owner_id
-    ):
+    if owner_id is None:
+        clear_description_conversation(context)
+        await query.answer("❌ انتهت بيانات العملية.", show_alert=True)
+        return ConversationHandler.END
+
+    if user_id != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
@@ -334,14 +367,16 @@ async def choose_description_subject(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 2:
         await query.answer(
@@ -352,11 +387,11 @@ async def choose_description_subject(
 
     subject_id = parts[1]
 
-    content_type = context.user_data.get(
+    content_type = context.admin_data.get(
         "bundle_desc_type"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "bundle_desc_stage_id"
     )
 
@@ -371,6 +406,7 @@ async def choose_description_subject(
             "❌ انتهت بيانات العملية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     subject_response = (
@@ -393,7 +429,7 @@ async def choose_description_subject(
         )
         return DESC_SUBJECT
 
-    context.user_data[
+    context.admin_data[
         "bundle_desc_subject_id"
     ] = subject_id
 
@@ -475,25 +511,28 @@ async def receive_description(
     user = update.effective_user
 
     if user is None:
-        return ConversationHandler.END
+        return None
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
-    if (
-        owner_id is not None
-        and user.id != owner_id
-    ):
+    if owner_id is None:
+        clear_description_conversation(context)
+        return ConversationHandler.END
+
+    if user.id != owner_id:
         return DESC_TEXT
 
     if not await has_permission(
         user.id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await update.message.reply_text(
             "⛔ ليس لديك صلاحية."
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     description = (
@@ -503,15 +542,15 @@ async def receive_description(
     if description == "بدون وصف":
         description = ""
 
-    content_type = context.user_data.get(
+    content_type = context.admin_data.get(
         "bundle_desc_type"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "bundle_desc_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "bundle_desc_subject_id"
     )
 
@@ -527,6 +566,7 @@ async def receive_description(
             "❌ انتهت بيانات العملية.\n"
             "ابدأ من أدوات الإدارة مرة ثانية."
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     try:
@@ -562,6 +602,7 @@ async def receive_description(
             "❌ تعذر حفظ الوصف."
         )
 
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     title = (
@@ -580,7 +621,7 @@ async def receive_description(
         "bundle_desc_subject_id",
         "bundle_desc_owner_id",
     ):
-        context.user_data.pop(
+        context.admin_data.pop(
             key,
             None,
         )
@@ -588,53 +629,16 @@ async def receive_description(
     return ConversationHandler.END
 
 
-async def cancel_description(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def cancel_description(update, context):
     user = update.effective_user
-
-    if user is not None:
-        if not await has_permission(
-            user.id,
-            PERMISSION_MANAGE_DESCRIPTIONS,
-        ):
-            if update.message:
-                await update.message.reply_text(
-                    "⛔ ليس لديك صلاحية."
-                )
-            return ConversationHandler.END
-
-        owner_id = context.user_data.get(
-            "bundle_desc_owner_id"
-        )
-
-        if (
-            owner_id is not None
-            and user.id != owner_id
-        ):
-            if update.message:
-                await update.message.reply_text(
-                    "⛔ هذه العملية مو إلك."
-                )
-            return DESC_TEXT
-
-    for key in (
-        "bundle_desc_type",
-        "bundle_desc_stage_id",
-        "bundle_desc_subject_id",
-        "bundle_desc_owner_id",
-    ):
-        context.user_data.pop(
-            key,
-            None,
-        )
-
+    if user is None or context.admin_data.get("bundle_desc_owner_id") != user.id:
+        return None
+    allowed = await has_permission(user.id, PERMISSION_MANAGE_DESCRIPTIONS, refresh=True)
+    clear_description_conversation(context)
     if update.message:
         await update.message.reply_text(
-            "❌ تم إلغاء العملية."
+            "❌ تم إلغاء العملية." if allowed else "⛔ ليس لديك صلاحية."
         )
-
     return ConversationHandler.END
 
 
@@ -644,19 +648,25 @@ async def bundle_description_cancel(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     user_id = query.from_user.id
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
-    if (
-        owner_id is not None
-        and user_id != owner_id
-    ):
+    if owner_id is None:
+        clear_description_conversation(context)
+        await query.answer("❌ انتهت بيانات العملية.", show_alert=True)
+        return ConversationHandler.END
+
+    if user_id != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
@@ -666,11 +676,13 @@ async def bundle_description_cancel(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     await query.answer()
@@ -681,7 +693,7 @@ async def bundle_description_cancel(
         "bundle_desc_subject_id",
         "bundle_desc_owner_id",
     ):
-        context.user_data.pop(
+        context.admin_data.pop(
             key,
             None,
         )
@@ -699,19 +711,25 @@ async def bundle_description_back_stage(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     user_id = query.from_user.id
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "bundle_desc_owner_id"
     )
 
-    if (
-        owner_id is not None
-        and user_id != owner_id
-    ):
+    if owner_id is None:
+        clear_description_conversation(context)
+        await query.answer("❌ انتهت بيانات العملية.", show_alert=True)
+        return ConversationHandler.END
+
+    if user_id != owner_id:
         await query.answer(
             "⛔ هذا الاختيار مو إلك.",
             show_alert=True,
@@ -721,16 +739,18 @@ async def bundle_description_back_stage(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_DESCRIPTIONS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     await query.answer()
 
-    content_type = context.user_data.get(
+    content_type = context.admin_data.get(
         "bundle_desc_type"
     )
 
@@ -738,6 +758,7 @@ async def bundle_description_back_stage(
         "files",
         "summaries",
     ):
+        clear_description_conversation(context)
         return ConversationHandler.END
 
     response = (
@@ -762,7 +783,7 @@ async def bundle_description_back_stage(
                     f"المرحلة {stage['stage_number']}"
                 ),
                 callback_data=(
-                    f"bundle_desc_stage:{stage['id']}"
+                    f"bundle_desc_stage:{stage['id']}:{user_id}"
                 ),
             )
         ])
@@ -770,7 +791,7 @@ async def bundle_description_back_stage(
     keyboard.append([
         InlineKeyboardButton(
             text="❌ إلغاء",
-            callback_data="bundle_desc_cancel",
+            callback_data=f'bundle_desc_cancel:{user_id}',
         )
     ])
 
@@ -780,6 +801,32 @@ async def bundle_description_back_stage(
     )
 
     return DESC_STAGE
+
+
+async def back_from_description_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("bundle_desc_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if not await has_permission(user.id, PERMISSION_MANAGE_DESCRIPTIONS, refresh=True):
+        clear_description_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    from bot.handlers.admin_tools import admin_tools
+    navigation = {
+        "bundle_descriptions": bundle_descriptions,
+        "admin_tools": admin_tools,
+        "admin_back": admin_back,
+    }
+    clear_description_conversation(context)
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
 
 
 def bundle_description_conversation_handler():
@@ -798,7 +845,7 @@ def bundle_description_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     bundle_description_cancel,
-                    pattern=r"^bundle_desc_cancel$",
+                    pattern=r"^bundle_desc_cancel:",
                 ),
             ],
             DESC_SUBJECT: [
@@ -808,11 +855,11 @@ def bundle_description_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     bundle_description_back_stage,
-                    pattern=r"^bundle_desc_back_stage$",
+                    pattern=r"^bundle_desc_back_stage:",
                 ),
                 CallbackQueryHandler(
                     bundle_description_cancel,
-                    pattern=r"^bundle_desc_cancel$",
+                    pattern=r"^bundle_desc_cancel:",
                 ),
             ],
             DESC_TEXT: [
@@ -823,6 +870,7 @@ def bundle_description_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_description_operation, pattern='^(?:bundle_descriptions$|admin_tools$|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_description,

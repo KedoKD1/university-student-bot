@@ -15,6 +15,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_SETTINGS,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -77,6 +78,7 @@ async def _has_settings_permission(
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_SETTINGS,
+        refresh=True,
     )
 
 
@@ -87,7 +89,7 @@ async def _has_settings_permission(
 def _get_setting_owner(
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    setting_data = context.user_data.get(
+    setting_data = context.admin_data.get(
         "admin_setting"
     )
 
@@ -105,7 +107,7 @@ def _is_setting_owner(
 
     return (
         owner_id is not None
-        and int(owner_id) == int(user_id)
+        and owner_id == user_id
     )
 
 
@@ -285,14 +287,13 @@ async def _get_display_value(
 # Settings keyboard
 # ============================================================
 
-def _settings_keyboard():
+def _settings_keyboard(owner_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="🔗 Required Channel ID",
                 callback_data=(
-                    "setting_edit:"
-                    f"{SETTING_REQUIRED_CHANNEL_ID}"
+                    f'setting_edit:{SETTING_REQUIRED_CHANNEL_ID}:{owner_id}'
                 ),
             )
         ],
@@ -300,8 +301,7 @@ def _settings_keyboard():
             InlineKeyboardButton(
                 text="👥 Student Group ID",
                 callback_data=(
-                    "setting_edit:"
-                    f"{SETTING_STUDENT_GROUP_ID}"
+                    f'setting_edit:{SETTING_STUDENT_GROUP_ID}:{owner_id}'
                 ),
             )
         ],
@@ -309,19 +309,18 @@ def _settings_keyboard():
             InlineKeyboardButton(
                 text="🔧 Maintenance Mode",
                 callback_data=(
-                    "setting_edit:"
-                    f"{SETTING_MAINTENANCE_MODE}"
+                    f'setting_edit:{SETTING_MAINTENANCE_MODE}:{owner_id}'
                 ),
             )
         ],
         [
             InlineKeyboardButton(
                 text="🔄 تحديث",
-                callback_data="setting_refresh",
+                callback_data=f'setting_refresh:{owner_id}',
             ),
             InlineKeyboardButton(
                 text="❌ إغلاق",
-                callback_data="setting_cancel",
+                callback_data=f'setting_cancel:{owner_id}',
             ),
         ],
     ])
@@ -405,7 +404,7 @@ async def admin_settings(
         )
         return ConversationHandler.END
 
-    context.user_data[
+    context.admin_data[
         "admin_setting"
     ] = {
         "owner_id": query.from_user.id,
@@ -415,7 +414,7 @@ async def admin_settings(
 
     await query.edit_message_text(
         await _settings_text(),
-        reply_markup=_settings_keyboard(),
+        reply_markup=_settings_keyboard(_get_setting_owner(context)),
         parse_mode="Markdown",
     )
 
@@ -431,6 +430,9 @@ async def settings_refresh(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -450,7 +452,7 @@ async def settings_refresh(
 
     await query.edit_message_text(
         await _settings_text(),
-        reply_markup=_settings_keyboard(),
+        reply_markup=_settings_keyboard(_get_setting_owner(context)),
         parse_mode="Markdown",
     )
 
@@ -467,6 +469,9 @@ async def setting_edit(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if (
         query is None
         or query.from_user is None
@@ -479,7 +484,7 @@ async def setting_edit(
     ):
         return ConversationHandler.END
 
-    data = query.data or ""
+    data = (query.data or "").rsplit(":", 1)[0]
 
     parts = data.split(":", 1)
 
@@ -503,7 +508,7 @@ async def setting_edit(
         key
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_setting"
     ]["key"] = key
 
@@ -517,20 +522,20 @@ async def setting_edit(
                 InlineKeyboardButton(
                     text="🟢 تفعيل",
                     callback_data=(
-                        "setting_value:true"
+                        f'setting_value:true:{query.from_user.id}'
                     ),
                 ),
                 InlineKeyboardButton(
                     text="🔴 تعطيل",
                     callback_data=(
-                        "setting_value:false"
+                        f'setting_value:false:{query.from_user.id}'
                     ),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="⬅️ رجوع",
-                    callback_data="setting_back",
+                    callback_data=f'setting_back:{query.from_user.id}',
                 )
             ],
         ])
@@ -557,7 +562,7 @@ async def setting_edit(
             [
                 InlineKeyboardButton(
                     text="⬅️ إلغاء",
-                    callback_data="setting_back",
+                    callback_data=f'setting_back:{query.from_user.id}',
                 )
             ]
         ]),
@@ -577,6 +582,9 @@ async def setting_predefined_value(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if (
         query is None
         or query.from_user is None
@@ -589,14 +597,14 @@ async def setting_predefined_value(
     ):
         return ConversationHandler.END
 
-    data = query.data or ""
+    data = (query.data or "").rsplit(":", 1)[0]
 
     if not data.startswith(
         "setting_value:"
     ):
         return SETTINGS_VALUE
 
-    setting_data = context.user_data.get(
+    setting_data = context.admin_data.get(
         "admin_setting"
     )
 
@@ -653,7 +661,7 @@ async def setting_predefined_value(
         "owner_id"
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_setting"
     ] = {
         "owner_id": owner_id,
@@ -665,7 +673,7 @@ async def setting_predefined_value(
 
     await query.edit_message_text(
         await _settings_text(),
-        reply_markup=_settings_keyboard(),
+        reply_markup=_settings_keyboard(_get_setting_owner(context)),
         parse_mode="Markdown",
     )
 
@@ -694,7 +702,7 @@ async def setting_value(
     ):
         return ConversationHandler.END
 
-    setting_data = context.user_data.get(
+    setting_data = context.admin_data.get(
         "admin_setting"
     )
 
@@ -762,7 +770,7 @@ async def setting_value(
         "owner_id"
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_setting"
     ] = {
         "owner_id": owner_id,
@@ -775,7 +783,7 @@ async def setting_value(
 
     await message.reply_text(
         await _settings_text(),
-        reply_markup=_settings_keyboard(),
+        reply_markup=_settings_keyboard(_get_setting_owner(context)),
         parse_mode="Markdown",
     )
 
@@ -791,6 +799,9 @@ async def setting_back(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -808,7 +819,7 @@ async def setting_back(
         context
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_setting"
     ] = {
         "owner_id": owner_id,
@@ -818,7 +829,7 @@ async def setting_back(
 
     await query.edit_message_text(
         await _settings_text(),
-        reply_markup=_settings_keyboard(),
+        reply_markup=_settings_keyboard(_get_setting_owner(context)),
         parse_mode="Markdown",
     )
 
@@ -834,6 +845,9 @@ async def settings_cancel(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -860,7 +874,7 @@ async def settings_cancel(
         )
         return ConversationHandler.END
 
-    context.user_data.pop(
+    context.admin_data.pop(
         "admin_setting",
         None,
     )
@@ -878,6 +892,21 @@ async def settings_cancel(
 # Conversation handler
 # ============================================================
 
+async def back_from_setting_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or _get_setting_owner(context) != user.id:
+        return None
+    allowed = await _has_settings_permission(user.id)
+    context.admin_data.pop("admin_setting", None)
+    if not allowed:
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+    from bot.handlers.admin import admin_back
+    await admin_back(update, context)
+    return ConversationHandler.END
+
+
 def settings_conversation_handler():
     return ConversationHandler(
         entry_points=[
@@ -894,11 +923,11 @@ def settings_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     settings_refresh,
-                    pattern=r"^setting_refresh$",
+                    pattern=r"^setting_refresh:",
                 ),
                 CallbackQueryHandler(
                     settings_cancel,
-                    pattern=r"^setting_cancel$",
+                    pattern=r"^setting_cancel:",
                 ),
             ],
             SETTINGS_VALUE: [
@@ -908,7 +937,7 @@ def settings_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     setting_back,
-                    pattern=r"^setting_back$",
+                    pattern=r"^setting_back:",
                 ),
                 MessageHandler(
                     filters.TEXT
@@ -918,9 +947,10 @@ def settings_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_setting_operation, pattern=r"^admin_back$"),
             CallbackQueryHandler(
                 settings_cancel,
-                pattern=r"^setting_cancel$",
+                pattern=r"^setting_cancel:",
             ),
         ],
         per_user=True,

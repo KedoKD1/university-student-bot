@@ -18,6 +18,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_SUMMARIES,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -96,19 +97,20 @@ def clear_summary_conversation(context):
     ]
 
     for key in keys:
-        context.user_data.pop(key, None)
+        context.admin_data.pop(key, None)
 
 
 async def has_summary_permission(user_id):
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_SUMMARIES,
+        refresh=True,
     )
 
 
 def is_summary_session_owner(context, user_id):
     return (
-        context.user_data.get("admin_summary_owner_id")
+        context.admin_data.get("admin_summary_owner_id")
         == user_id
     )
 
@@ -126,7 +128,7 @@ async def check_summary_access(query, context):
         )
         return False
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "admin_summary_owner_id"
     )
 
@@ -146,7 +148,12 @@ async def check_summary_message_access(update, context):
 
     user_id = update.effective_user.id
 
+    owner_id = context.admin_data.get("admin_summary_owner_id")
+    if owner_id is not None and owner_id != user_id:
+        return False
+
     if not await has_summary_permission(user_id):
+        clear_summary_conversation(context)
         if update.message:
             await update.message.reply_text(
                 "⛔ ليس لديك صلاحية إدارة الملخصات."
@@ -237,6 +244,7 @@ def summary_list_keyboard(
     stage_id,
     subject_id,
     section_type,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -259,8 +267,7 @@ def summary_list_keyboard(
         InlineKeyboardButton(
             text="➕ إضافة ملخص",
             callback_data=(
-                f"add_summary:{stage_id}:"
-                f"{subject_id}:{section_type}"
+                f'add_summary:{stage_id}:{subject_id}:{section_type}:{owner_id}'
             ),
         )
     ])
@@ -284,6 +291,7 @@ def summary_manage_keyboard(
     subject_id,
     section_type,
     is_active,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -305,8 +313,7 @@ def summary_manage_keyboard(
             InlineKeyboardButton(
                 text="✏️ تعديل البيانات",
                 callback_data=(
-                    f"edit_summary:{summary_id}:"
-                    f"{stage_id}:{subject_id}:{section_type}"
+                    f'edit_summary:{summary_id}:{stage_id}:{subject_id}:{section_type}:{owner_id}'
                 ),
             )
         ],
@@ -490,7 +497,7 @@ async def admin_summaries(
 
     clear_summary_conversation(context)
 
-    context.user_data["admin_summary_owner_id"] = (
+    context.admin_data["admin_summary_owner_id"] = (
         query.from_user.id
     )
 
@@ -792,6 +799,7 @@ async def admin_summary_section(
             stage_id,
             subject_id,
             section_type,
+            query.from_user.id,
         ),
     )
 
@@ -912,6 +920,7 @@ async def admin_summary_list(
             stage_id,
             subject_id,
             section_type,
+            query.from_user.id,
         ),
     )
 
@@ -967,6 +976,12 @@ async def manage_summary(
         )
         return
 
+    stage_response = supabase.table("subjects").select("stage_id").eq("id", subject_id).limit(1).execute()
+    if not stage_response.data:
+        await query.answer("❌ المادة غير موجودة.", show_alert=True)
+        return
+    stage_id = stage_response.data[0]["stage_id"]
+
     await query.answer()
 
     status = (
@@ -989,10 +1004,11 @@ async def manage_summary(
         f"📝 الوصف:\n{description}",
         reply_markup=summary_manage_keyboard(
             summary_id,
-            summary["subject_id"],
+            stage_id,
             subject_id,
             section_type,
             summary["is_active"],
+            query.from_user.id,
         ),
     )
 
@@ -1099,6 +1115,7 @@ async def toggle_summary(
             subject_id,
             section_type,
             is_active,
+            query.from_user.id,
         ),
     )
 
@@ -1269,6 +1286,9 @@ async def start_add_summary(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
@@ -1278,7 +1298,7 @@ async def start_add_summary(
     ):
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 4:
         await query.answer(
@@ -1300,12 +1320,12 @@ async def start_add_summary(
 
     clear_summary_conversation(context)
 
-    context.user_data["admin_summary_owner_id"] = (
+    context.admin_data["admin_summary_owner_id"] = (
         query.from_user.id
     )
-    context.user_data["admin_summary_stage_id"] = stage_id
-    context.user_data["admin_summary_subject_id"] = subject_id
-    context.user_data["admin_summary_section_type"] = (
+    context.admin_data["admin_summary_stage_id"] = stage_id
+    context.admin_data["admin_summary_subject_id"] = subject_id
+    context.admin_data["admin_summary_section_type"] = (
         section_type
     )
 
@@ -1341,7 +1361,7 @@ async def receive_add_summary_name(
         )
         return ADD_SUMMARY_NAME
 
-    context.user_data["admin_summary_name"] = name
+    context.admin_data["admin_summary_name"] = name
 
     await update.message.reply_text(
         "📝 أرسل وصف الملخص:\n\n"
@@ -1368,7 +1388,7 @@ async def receive_add_summary_description(
         update.message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_summary_description"
     ] = description
 
@@ -1410,7 +1430,7 @@ async def receive_add_summary_order(
         )
         return ADD_SUMMARY_ORDER
 
-    context.user_data[
+    context.admin_data[
         "admin_summary_order"
     ] = order
 
@@ -1450,22 +1470,22 @@ async def receive_add_summary_upload(
         )
         return ADD_SUMMARY_UPLOAD
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_summary_stage_id"
     )
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_summary_subject_id"
     )
-    section_type = context.user_data.get(
+    section_type = context.admin_data.get(
         "admin_summary_section_type"
     )
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_summary_name"
     )
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_summary_description"
     )
-    sort_order = context.user_data.get(
+    sort_order = context.admin_data.get(
         "admin_summary_order"
     )
 
@@ -1498,6 +1518,7 @@ async def receive_add_summary_upload(
             "is_active": True,
         }).execute()
     except Exception:
+        clear_summary_conversation(context)
         await update.message.reply_text(
             "❌ تعذر حفظ الملخص في قاعدة البيانات.\n\n"
             "تأكد من بيانات الجدول وحاول مرة أخرى."
@@ -1531,6 +1552,9 @@ async def start_edit_summary(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
         return ConversationHandler.END
 
@@ -1540,7 +1564,7 @@ async def start_edit_summary(
     ):
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 5:
         await query.answer(
@@ -1575,15 +1599,15 @@ async def start_edit_summary(
 
     clear_summary_conversation(context)
 
-    context.user_data["admin_summary_owner_id"] = (
+    context.admin_data["admin_summary_owner_id"] = (
         query.from_user.id
     )
-    context.user_data["admin_summary_stage_id"] = stage_id
-    context.user_data["admin_summary_subject_id"] = subject_id
-    context.user_data["admin_summary_section_type"] = (
+    context.admin_data["admin_summary_stage_id"] = stage_id
+    context.admin_data["admin_summary_subject_id"] = subject_id
+    context.admin_data["admin_summary_section_type"] = (
         section_type
     )
-    context.user_data["admin_summary_id"] = summary_id
+    context.admin_data["admin_summary_id"] = summary_id
 
     await query.answer()
 
@@ -1617,7 +1641,7 @@ async def receive_edit_summary_name(
         )
         return EDIT_SUMMARY_NAME
 
-    context.user_data[
+    context.admin_data[
         "admin_summary_name"
     ] = name
 
@@ -1646,7 +1670,7 @@ async def receive_edit_summary_description(
         update.message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_summary_description"
     ] = description
 
@@ -1686,22 +1710,22 @@ async def receive_edit_summary_order(
         )
         return EDIT_SUMMARY_ORDER
 
-    summary_id = context.user_data.get(
+    summary_id = context.admin_data.get(
         "admin_summary_id"
     )
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_summary_stage_id"
     )
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_summary_subject_id"
     )
-    section_type = context.user_data.get(
+    section_type = context.admin_data.get(
         "admin_summary_section_type"
     )
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_summary_name"
     )
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_summary_description"
     )
 
@@ -1722,7 +1746,7 @@ async def receive_edit_summary_order(
         return ConversationHandler.END
 
     try:
-        supabase.table("summaries").update({
+        response = supabase.table("summaries").update({
             "name": name,
             "description": description,
             "sort_order": order,
@@ -1732,8 +1756,11 @@ async def receive_edit_summary_order(
         }).eq(
             "id",
             summary_id,
-        ).execute()
+        ).eq("subject_id", subject_id).is_("deleted_at", "null").execute()
+        if not response.data:
+            raise ValueError("Supabase returned no updated summary.")
     except Exception:
+        clear_summary_conversation(context)
         await update.message.reply_text(
             "❌ تعذر تعديل بيانات الملخص."
         )
@@ -1768,7 +1795,11 @@ async def cancel_summary_operation(
 
     user_id = update.effective_user.id
 
+    if not is_summary_session_owner(context, user_id):
+        return None
+
     if not await has_summary_permission(user_id):
+        clear_summary_conversation(context)
         if update.message:
             await update.message.reply_text(
                 "⛔ ليس لديك صلاحية إدارة الملخصات."
@@ -1798,6 +1829,34 @@ async def cancel_summary_operation(
 # =========================
 # Conversation Handler
 # =========================
+
+async def back_from_summary_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("admin_summary_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if not await has_summary_permission(user.id):
+        clear_summary_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_summaries": admin_summaries,
+        "admin_summary_list": admin_summary_list,
+        "admin_summary_sections": admin_summary_sections,
+        "admin_summary_subjects": admin_summary_subjects,
+        "admin_summary_stage": admin_summary_stage,
+        "admin_back": admin_back,
+    }
+    clear_summary_conversation(context)
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
 
 def summary_conversation_handler():
     return ConversationHandler(
@@ -1859,6 +1918,7 @@ def summary_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_summary_operation, pattern='^(?:admin_summaries$|admin_summary_list:|admin_summary_sections:|admin_summary_subjects:|admin_summary_stage:|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_summary_operation,
