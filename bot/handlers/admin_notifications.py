@@ -24,6 +24,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -49,6 +50,7 @@ async def _has_notification_permission(
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_ANNOUNCEMENTS,
+        refresh=True,
     )
 
 
@@ -59,11 +61,11 @@ async def _has_notification_permission(
 def _get_notification_owner(
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    notification = context.user_data.get(
+    notification = context.admin_data.get(
         "admin_notification"
     )
 
-    if not notification:
+    if not isinstance(notification, dict):
         return None
 
     return notification.get(
@@ -81,7 +83,7 @@ def _is_notification_owner(
 
     return (
         owner_id is not None
-        and int(owner_id) == int(user_id)
+        and owner_id == user_id
     )
 
 
@@ -89,13 +91,13 @@ def _is_notification_owner(
 # Audience keyboard
 # ============================================================
 
-def _audience_keyboard():
+def _audience_keyboard(owner_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="👥 جميع المستخدمين",
                 callback_data=(
-                    "notify_audience:all"
+                    f'notify_audience:all:{owner_id}'
                 ),
             )
         ],
@@ -103,7 +105,7 @@ def _audience_keyboard():
             InlineKeyboardButton(
                 text="👤 مستخدم محدد",
                 callback_data=(
-                    "notify_audience:user"
+                    f'notify_audience:user:{owner_id}'
                 ),
             )
         ],
@@ -111,7 +113,7 @@ def _audience_keyboard():
             InlineKeyboardButton(
                 text="👥 مجموعة محددة",
                 callback_data=(
-                    "notify_audience:group"
+                    f'notify_audience:group:{owner_id}'
                 ),
             )
         ],
@@ -119,14 +121,14 @@ def _audience_keyboard():
             InlineKeyboardButton(
                 text="📢 قناة محددة",
                 callback_data=(
-                    "notify_audience:channel"
+                    f'notify_audience:channel:{owner_id}'
                 ),
             )
         ],
         [
             InlineKeyboardButton(
                 text="❌ إلغاء",
-                callback_data="notify_cancel",
+                callback_data=f'notify_cancel:{owner_id}',
             )
         ],
     ])
@@ -204,6 +206,7 @@ def _chat_display_name(
 def _chat_keyboard(
     chats,
     audience_type: str,
+    owner_id,
 ):
     keyboard = []
 
@@ -217,9 +220,7 @@ def _chat_keyboard(
             InlineKeyboardButton(
                 text=_chat_display_name(chat),
                 callback_data=(
-                    f"notify_chat:"
-                    f"{audience_type}:"
-                    f"{chat_id}"
+                    f'notify_chat:{audience_type}:{chat_id}:{owner_id}'
                 ),
             )
         ])
@@ -227,7 +228,7 @@ def _chat_keyboard(
     keyboard.append([
         InlineKeyboardButton(
             text="❌ إلغاء",
-            callback_data="notify_cancel",
+            callback_data=f'notify_cancel:{owner_id}',
         )
     ])
 
@@ -241,7 +242,7 @@ def _chat_keyboard(
 def _get_notification(
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    return context.user_data.get(
+    return context.admin_data.get(
         "admin_notification"
     )
 
@@ -249,7 +250,7 @@ def _get_notification(
 def _clear_notification(
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    context.user_data.pop(
+    context.admin_data.pop(
         "admin_notification",
         None,
     )
@@ -284,7 +285,7 @@ async def admin_notifications(
 
     _clear_notification(context)
 
-    context.user_data[
+    context.admin_data[
         "admin_notification"
     ] = {
         "owner_id": user_id,
@@ -295,7 +296,7 @@ async def admin_notifications(
     await query.edit_message_text(
         "📢 إدارة التبليغات\n\n"
         "اختر الجمهور الذي تريد إرسال التبليغ إليه:",
-        reply_markup=_audience_keyboard(),
+        reply_markup=_audience_keyboard(user_id),
     )
 
     return NOTIFICATION_AUDIENCE
@@ -310,6 +311,9 @@ async def notification_audience(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -345,7 +349,7 @@ async def notification_audience(
         )
         return NOTIFICATION_AUDIENCE
 
-    data = query.data or ""
+    data = (query.data or "").rsplit(":", 1)[0]
 
     if data == "notify_cancel":
         await query.answer()
@@ -377,7 +381,7 @@ async def notification_audience(
             "audience_value"
         ] = None
 
-        context.user_data[
+        context.admin_data[
             "admin_notification"
         ] = notification
 
@@ -398,7 +402,7 @@ async def notification_audience(
             "audience_value"
         ] = None
 
-        context.user_data[
+        context.admin_data[
             "admin_notification"
         ] = notification
 
@@ -430,6 +434,7 @@ async def notification_audience(
             reply_markup=_chat_keyboard(
                 chats,
                 "group",
+                user_id,
             ),
         )
 
@@ -454,6 +459,7 @@ async def notification_audience(
             reply_markup=_chat_keyboard(
                 chats,
                 "channel",
+                user_id,
             ),
         )
 
@@ -522,7 +528,7 @@ async def notification_user_id(
         "audience_value"
     ] = str(target_user_id)
 
-    context.user_data[
+    context.admin_data[
         "admin_notification"
     ] = notification
 
@@ -542,6 +548,9 @@ async def notification_chat(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -570,7 +579,7 @@ async def notification_chat(
         )
         return NOTIFICATION_AUDIENCE
 
-    data = query.data or ""
+    data = (query.data or "").rsplit(":", 1)[0]
 
     parts = data.split(":")
 
@@ -619,7 +628,7 @@ async def notification_chat(
         "audience_value"
     ] = audience_value
 
-    context.user_data[
+    context.admin_data[
         "admin_notification"
     ] = notification
 
@@ -690,7 +699,7 @@ async def notification_title(
         "title"
     ] = title
 
-    context.user_data[
+    context.admin_data[
         "admin_notification"
     ] = notification
 
@@ -777,7 +786,7 @@ async def notification_content(
         "content"
     ] = content
 
-    context.user_data[
+    context.admin_data[
         "admin_notification"
     ] = notification
 
@@ -813,17 +822,18 @@ async def notification_content(
     else:
         audience_text = "❓ غير معروف"
 
+    owner_id = user_id
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
                 text="🚀 إرسال التبليغ",
-                callback_data="notify_confirm",
+                callback_data=f'notify_confirm:{owner_id}',
             )
         ],
         [
             InlineKeyboardButton(
                 text="❌ إلغاء",
-                callback_data="notify_cancel",
+                callback_data=f'notify_cancel:{owner_id}',
             )
         ],
     ])
@@ -851,6 +861,9 @@ async def notification_confirm(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if (
         query is None
@@ -890,7 +903,7 @@ async def notification_confirm(
         )
         return ConversationHandler.END
 
-    if query.data == "notify_cancel":
+    if query.data.rsplit(":", 1)[0] == "notify_cancel":
         await query.answer()
 
         _clear_notification(context)
@@ -901,7 +914,7 @@ async def notification_confirm(
 
         return ConversationHandler.END
 
-    if query.data != "notify_confirm":
+    if query.data.rsplit(":", 1)[0] != "notify_confirm":
         return NOTIFICATION_CONFIRM
 
     await query.answer(
@@ -1306,6 +1319,21 @@ async def _send_notification(
 # Conversation handler
 # ============================================================
 
+async def back_from_notification_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None or _get_notification_owner(context) != user.id:
+        return None
+    allowed = await _has_notification_permission(user.id)
+    _clear_notification(context)
+    if not allowed:
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+    from bot.handlers.admin import admin_back
+    await admin_back(update, context)
+    return ConversationHandler.END
+
+
 def notification_conversation_handler():
     return ConversationHandler(
         entry_points=[
@@ -1328,7 +1356,7 @@ def notification_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     notification_cancel,
-                    pattern=r"^notify_cancel$",
+                    pattern=r"^notify_cancel:",
                 ),
                 MessageHandler(
                     filters.TEXT
@@ -1344,7 +1372,7 @@ def notification_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     notification_cancel,
-                    pattern=r"^notify_cancel$",
+                    pattern=r"^notify_cancel:",
                 ),
             ],
             NOTIFICATION_CONTENT: [
@@ -1355,26 +1383,27 @@ def notification_conversation_handler():
                 ),
                 CallbackQueryHandler(
                     notification_cancel,
-                    pattern=r"^notify_cancel$",
+                    pattern=r"^notify_cancel:",
                 ),
             ],
             NOTIFICATION_CONFIRM: [
                 CallbackQueryHandler(
                     notification_confirm,
                     pattern=(
-                        r"^notify_confirm$"
+                        r"^notify_confirm:"
                     ),
                 ),
                 CallbackQueryHandler(
                     notification_cancel,
-                    pattern=r"^notify_cancel$",
+                    pattern=r"^notify_cancel:",
                 ),
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_notification_operation, pattern=r"^admin_back$"),
             CallbackQueryHandler(
                 notification_cancel,
-                pattern=r"^notify_cancel$",
+                pattern=r"^notify_cancel:",
             ),
         ],
         per_user=True,
@@ -1393,9 +1422,11 @@ async def notification_cancel(
 ):
     query = update.callback_query
 
-    if query is None:
-        _clear_notification(context)
-        return ConversationHandler.END
+    if not await require_callback_owner(query):
+        return None
+
+    if query is None or query.from_user is None:
+        return None
 
     user_id = query.from_user.id
 

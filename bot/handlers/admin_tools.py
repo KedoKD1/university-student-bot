@@ -1,3 +1,5 @@
+import re
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -17,6 +19,7 @@ from bot.database.client import supabase
 
 from bot.utils.permissions import (
     has_permission,
+    require_callback_owner,
     clear_permission_cache,
     PERMISSION_VIEW_ADMIN,
     PERMISSION_VIEW_STATISTICS,
@@ -26,6 +29,7 @@ from bot.utils.permissions import (
 
 
 ROLE_USERNAME = 10
+ROLE_SELECTION = 11
 
 
 ROLE_NAMES = {
@@ -43,6 +47,9 @@ async def tools_keyboard(
     user_id: int,
 ):
     keyboard = []
+
+    # admin_tools already refreshed access for this menu. Button visibility
+    # can reuse that DB snapshot; each selected action rechecks its permission.
 
     # --------------------------------------------------------
     # Bot status
@@ -121,6 +128,7 @@ async def admin_tools(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_VIEW_ADMIN,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -191,6 +199,7 @@ async def bot_status(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_VIEW_STATISTICS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لعرض الإحصائيات.",
@@ -318,6 +327,7 @@ async def admin_roles(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -372,7 +382,7 @@ async def admin_roles(
         [
             InlineKeyboardButton(
                 "➕ إعطاء رتبة",
-                callback_data="role_add",
+                callback_data=f'role_add:{query.from_user.id}',
             )
         ]
     ]
@@ -430,11 +440,19 @@ async def admin_roles(
 # Start adding role
 # ============================================================
 
+def clear_role_conversation(context):
+    for key in ("role_target_id", "role_target_username", "role_owner_id"):
+        context.admin_data.pop(key, None)
+
+
 async def role_add_start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
+
+    if not await require_callback_owner(query):
+        return None
 
     if query is None or query.from_user is None:
         return ConversationHandler.END
@@ -442,6 +460,7 @@ async def role_add_start(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -449,12 +468,15 @@ async def role_add_start(
         )
         return ConversationHandler.END
 
-    context.user_data.pop(
+    clear_role_conversation(context)
+    context.admin_data["role_owner_id"] = query.from_user.id
+
+    context.admin_data.pop(
         "role_target_id",
         None,
     )
 
-    context.user_data.pop(
+    context.admin_data.pop(
         "role_target_username",
         None,
     )
@@ -484,6 +506,14 @@ async def role_receive_username(
     if update.message is None:
         return ROLE_USERNAME
 
+    user = update.effective_user
+    if user is None or context.admin_data.get("role_owner_id") != user.id:
+        return None
+    if not await has_permission(user.id, PERMISSION_MANAGE_ADMINS, refresh=True):
+        clear_role_conversation(context)
+        await update.message.reply_text("⛔ ليس لديك صلاحية لإدارة المشرفين.")
+        return ConversationHandler.END
+
     username = (
         update.message.text or ""
     ).strip()
@@ -492,7 +522,7 @@ async def role_receive_username(
         "@"
     ).strip()
 
-    if not username or " " in username:
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", username):
         await update.message.reply_text(
             "❌ Username غير صحيح.\n"
             "أرسله بهذا الشكل:\n"
@@ -511,7 +541,7 @@ async def role_receive_username(
             )
             .ilike(
                 "username",
-                username,
+                username.replace("_", r"\_"),
             )
             .limit(1)
             .execute()
@@ -529,6 +559,7 @@ async def role_receive_username(
             "تأكد أن جدول telegram_users موجود."
         )
 
+        clear_role_conversation(context)
         return ConversationHandler.END
 
     rows = response.data or []
@@ -593,6 +624,7 @@ async def role_receive_username(
                 "⛔ لا يمكن تعديل رتبة Owner."
             )
 
+            clear_role_conversation(context)
             return ConversationHandler.END
 
     except Exception as exc:
@@ -606,13 +638,14 @@ async def role_receive_username(
             "❌ تعذر التحقق من رتبة المستخدم."
         )
 
+        clear_role_conversation(context)
         return ConversationHandler.END
 
-    context.user_data[
+    context.admin_data[
         "role_target_id"
     ] = target_id
 
-    context.user_data[
+    context.admin_data[
         "role_target_username"
     ] = target_username
 
@@ -631,13 +664,13 @@ async def role_receive_username(
             [
                 InlineKeyboardButton(
                     "🛡️ Admin",
-                    callback_data="set_role:admin",
+                    callback_data=f'set_role:admin:{target_id}:{update.effective_user.id}',
                 )
             ],
             [
                 InlineKeyboardButton(
                     "🔧 Moderator",
-                    callback_data="set_role:moderator",
+                    callback_data=f'set_role:moderator:{target_id}:{update.effective_user.id}',
                 )
             ],
             [
@@ -649,7 +682,7 @@ async def role_receive_username(
         ]),
     )
 
-    return ConversationHandler.END
+    return ROLE_SELECTION
 
 
 # ============================================================
@@ -662,12 +695,16 @@ async def set_role(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if query is None or query.from_user is None:
         return
 
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -675,12 +712,16 @@ async def set_role(
         )
         return
 
-    target_id = context.user_data.get(
+    if context.admin_data.get("role_owner_id") != query.from_user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+
+    target_id = context.admin_data.get(
         "role_target_id"
     )
 
     target_username = (
-        context.user_data.get(
+        context.admin_data.get(
             "role_target_username",
             "المستخدم",
         )
@@ -693,12 +734,11 @@ async def set_role(
         )
         return
 
-    parts = query.data.split(
+    parts = query.data.rsplit(":", 1)[0].split(
         ":",
-        1,
     )
 
-    if len(parts) != 2:
+    if len(parts) != 3 or parts[2] != str(target_id):
         await query.answer(
             "❌ رتبة غير صحيحة.",
             show_alert=True,
@@ -786,16 +826,18 @@ async def set_role(
 
         return
 
+    clear_role_conversation(context)
+
     clear_permission_cache(
         target_id
     )
 
-    context.user_data.pop(
+    context.admin_data.pop(
         "role_target_id",
         None,
     )
 
-    context.user_data.pop(
+    context.admin_data.pop(
         "role_target_username",
         None,
     )
@@ -814,6 +856,8 @@ async def set_role(
         context,
     )
 
+    return ConversationHandler.END
+
 
 # ============================================================
 # Manage role
@@ -831,6 +875,7 @@ async def role_manage(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -991,6 +1036,7 @@ async def change_role(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -1112,6 +1158,7 @@ async def remove_role(
     if not await has_permission(
         query.from_user.id,
         PERMISSION_MANAGE_ADMINS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية لإدارة المشرفين.",
@@ -1212,25 +1259,16 @@ async def remove_role(
 # Cancel role operation
 # ============================================================
 
-async def cancel_role(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    context.user_data.pop(
-        "role_target_id",
-        None,
-    )
-
-    context.user_data.pop(
-        "role_target_username",
-        None,
-    )
-
+async def cancel_role(update, context):
+    user = update.effective_user
+    if user is None or context.admin_data.get("role_owner_id") != user.id:
+        return None
+    allowed = await has_permission(user.id, PERMISSION_MANAGE_ADMINS, refresh=True)
+    clear_role_conversation(context)
     if update.message:
         await update.message.reply_text(
-            "❌ تم إلغاء العملية."
+            "❌ تم إلغاء العملية." if allowed else "⛔ ليس لديك صلاحية."
         )
-
     return ConversationHandler.END
 
 
@@ -1238,15 +1276,41 @@ async def cancel_role(
 # Role conversation handler
 # ============================================================
 
+async def back_from_role_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("role_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if not await has_permission(user.id, PERMISSION_MANAGE_ADMINS, refresh=True):
+        clear_role_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_roles": admin_roles,
+        "admin_tools": admin_tools,
+        "admin_back": admin_back,
+    }
+    clear_role_conversation(context)
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
+
 def role_conversation_handler():
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(
                 role_add_start,
-                pattern=r"^role_add$",
+                pattern=r"^role_add:",
             )
         ],
         states={
+            ROLE_SELECTION: [CallbackQueryHandler(set_role, pattern=r"^set_role:")],
             ROLE_USERNAME: [
                 MessageHandler(
                     filters.TEXT
@@ -1256,6 +1320,7 @@ def role_conversation_handler():
             ]
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_role_operation, pattern='^(?:admin_roles$|admin_tools$|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_role,

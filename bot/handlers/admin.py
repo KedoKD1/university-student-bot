@@ -25,6 +25,7 @@ from bot.utils.permissions import (
     PERMISSION_MANAGE_SETTINGS,
     get_admin,
     get_role_permissions,
+    clear_permission_cache,
     is_admin,
     has_permission,
 )
@@ -37,6 +38,8 @@ from bot.utils.permissions import (
 async def get_admin_permissions(
     user_id: int,
 ):
+    clear_permission_cache(user_id)
+
     admin = await get_admin(
         user_id
     )
@@ -355,6 +358,7 @@ async def delete_subject(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -455,6 +459,7 @@ async def confirm_delete_subject(
     if not await has_permission(
         user_id,
         PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
     ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
@@ -614,6 +619,7 @@ async def admin_button(
         if not await has_permission(
             user_id,
             PERMISSION_MANAGE_ANNOUNCEMENTS,
+            refresh=True,
         ):
             await query.answer(
                 "⛔ ليس لديك صلاحية.",
@@ -632,6 +638,7 @@ async def admin_button(
         if not await has_permission(
             user_id,
             PERMISSION_MANAGE_SETTINGS,
+            refresh=True,
         ):
             await query.answer(
                 "⛔ ليس لديك صلاحية.",

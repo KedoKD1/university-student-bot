@@ -18,6 +18,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_FILES,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -70,7 +71,7 @@ def clear_file_conversation(context):
     ]
 
     for key in keys:
-        context.user_data.pop(key, None)
+        context.admin_data.pop(key, None)
 
 
 def normalize_text(text):
@@ -144,6 +145,7 @@ async def has_file_permission(user_id):
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_FILES,
+        refresh=True,
     )
 
 
@@ -152,7 +154,7 @@ def is_file_session_owner(
     user_id: int,
 ):
     return (
-        context.user_data.get("admin_files_owner_id")
+        context.admin_data.get("admin_files_owner_id")
         == user_id
     )
 
@@ -197,7 +199,12 @@ async def check_file_message_access(
 
     user_id = message.from_user.id
 
+    owner_id = context.admin_data.get("admin_files_owner_id")
+    if owner_id is not None and owner_id != user_id:
+        return False
+
     if not await has_file_permission(user_id):
+        clear_file_conversation(context)
         await message.reply_text(
             "⛔ ليس لديك صلاحية إدارة الملفات."
         )
@@ -255,6 +262,7 @@ def file_list_keyboard(
     stage_id,
     subject_id,
     section_type,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -277,8 +285,7 @@ def file_list_keyboard(
         InlineKeyboardButton(
             text="➕ إضافة ملف",
             callback_data=(
-                f"add_file:{stage_id}:{subject_id}:"
-                f"{section_type}"
+                f'add_file:{stage_id}:{subject_id}:{section_type}:{owner_id}'
             ),
         )
     ])
@@ -302,6 +309,7 @@ def file_manage_keyboard(
     subject_id,
     section_type,
     is_active,
+    owner_id,
 ):
     section_type = normalize_section_type(section_type)
 
@@ -324,7 +332,7 @@ def file_manage_keyboard(
                 text="✏️ تعديل البيانات",
                 callback_data=(
                     f"edit_file:{file_id}:{stage_id}:"
-                    f"{subject_id}:{section_type}"
+                    f"{subject_id}:{section_type}:{owner_id}"
                 ),
             )
         ],
@@ -508,7 +516,7 @@ async def admin_files(
 
     clear_file_conversation(context)
 
-    context.user_data[
+    context.admin_data[
         "admin_files_owner_id"
     ] = query.from_user.id
 
@@ -889,6 +897,7 @@ async def admin_file_section(
                 stage_id,
                 subject_id,
                 section_type,
+                query.from_user.id,
             ),
         )
         return
@@ -903,6 +912,7 @@ async def admin_file_section(
             stage_id,
             subject_id,
             section_type,
+            query.from_user.id,
         ),
     )
 
@@ -981,6 +991,7 @@ async def admin_file_list(
             stage_id,
             subject_id,
             section_type,
+            query.from_user.id,
         ),
     )
 
@@ -1095,6 +1106,7 @@ async def manage_file(
             subject_id,
             section_type,
             file.get("is_active", False),
+            query.from_user.id,
         ),
     )
 
@@ -1109,13 +1121,16 @@ async def start_add_file(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if not await check_file_access(
         query,
         context,
     ):
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 4:
         await query.answer(
@@ -1139,19 +1154,19 @@ async def start_add_file(
 
     clear_file_conversation(context)
 
-    context.user_data[
+    context.admin_data[
         "admin_files_owner_id"
     ] = owner_id
 
-    context.user_data[
+    context.admin_data[
         "admin_file_stage_id"
     ] = stage_id
 
-    context.user_data[
+    context.admin_data[
         "admin_file_subject_id"
     ] = subject_id
 
-    context.user_data[
+    context.admin_data[
         "admin_file_section_type"
     ] = section_type
 
@@ -1190,7 +1205,7 @@ async def receive_add_file_name(
         )
         return ADD_FILE_NAME
 
-    context.user_data["admin_file_name"] = name
+    context.admin_data["admin_file_name"] = name
 
     await message.reply_text(
         "📝 أرسل وصف الملف.\n\n"
@@ -1221,7 +1236,7 @@ async def receive_add_file_description(
         message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_file_description"
     ] = description
 
@@ -1268,7 +1283,7 @@ async def receive_add_file_order(
         )
         return ADD_FILE_ORDER
 
-    context.user_data["admin_file_order"] = order
+    context.admin_data["admin_file_order"] = order
 
     await message.reply_text(
         "📎 الآن أرسل الملف نفسه.\n\n"
@@ -1308,29 +1323,29 @@ async def receive_add_file_upload(
         )
         return ADD_FILE_UPLOAD
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_file_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_file_subject_id"
     )
 
     section_type = normalize_section_type(
-        context.user_data.get(
+        context.admin_data.get(
             "admin_file_section_type"
         )
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_file_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_file_description"
     )
 
-    sort_order = context.user_data.get(
+    sort_order = context.admin_data.get(
         "admin_file_order"
     )
 
@@ -1387,12 +1402,10 @@ async def receive_add_file_upload(
             )
 
     except Exception as exc:
-        error_text = str(exc)
+        print("FILE SAVE ERROR:", type(exc).__name__, exc)
 
         await message.reply_text(
             "❌ حدث خطأ أثناء حفظ الملف.\n\n"
-            "🔎 تفاصيل الخطأ:\n"
-            f"{error_text}\n\n"
             "لم يتم إنشاء سجل الملف."
         )
 
@@ -1427,13 +1440,16 @@ async def start_edit_file(
 ):
     query = update.callback_query
 
+    if not await require_callback_owner(query):
+        return None
+
     if not await check_file_access(
         query,
         context,
     ):
         return ConversationHandler.END
 
-    parts = query.data.split(":")
+    parts = query.data.rsplit(":", 1)[0].split(":")
 
     if len(parts) != 5:
         await query.answer(
@@ -1470,22 +1486,22 @@ async def start_edit_file(
 
     clear_file_conversation(context)
 
-    context.user_data[
+    context.admin_data[
         "admin_files_owner_id"
     ] = owner_id
 
-    context.user_data["admin_file_id"] = file_id
-    context.user_data["admin_file_stage_id"] = stage_id
-    context.user_data["admin_file_subject_id"] = subject_id
-    context.user_data["admin_file_section_type"] = section_type
+    context.admin_data["admin_file_id"] = file_id
+    context.admin_data["admin_file_stage_id"] = stage_id
+    context.admin_data["admin_file_subject_id"] = subject_id
+    context.admin_data["admin_file_section_type"] = section_type
 
-    context.user_data["admin_file_name"] = file["name"]
+    context.admin_data["admin_file_name"] = file["name"]
 
-    context.user_data[
+    context.admin_data[
         "admin_file_description"
     ] = file.get("description")
 
-    context.user_data[
+    context.admin_data[
         "admin_file_order"
     ] = file.get(
         "sort_order",
@@ -1527,9 +1543,9 @@ async def receive_edit_file_name(
         )
         return EDIT_FILE_NAME
 
-    context.user_data["admin_file_name"] = name
+    context.admin_data["admin_file_name"] = name
 
-    current_description = context.user_data.get(
+    current_description = context.admin_data.get(
         "admin_file_description"
     )
 
@@ -1570,11 +1586,11 @@ async def receive_edit_file_description(
         message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_file_description"
     ] = description
 
-    current_order = context.user_data.get(
+    current_order = context.admin_data.get(
         "admin_file_order",
         0,
     )
@@ -1621,29 +1637,29 @@ async def receive_edit_file_order(
         )
         return EDIT_FILE_ORDER
 
-    file_id = context.user_data.get(
+    file_id = context.admin_data.get(
         "admin_file_id"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_file_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_file_subject_id"
     )
 
     section_type = normalize_section_type(
-        context.user_data.get(
+        context.admin_data.get(
             "admin_file_section_type"
         )
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_file_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_file_description"
     )
 
@@ -1690,10 +1706,9 @@ async def receive_edit_file_order(
             )
 
     except Exception as exc:
+        print("FILE EDIT ERROR:", type(exc).__name__, exc)
         await message.reply_text(
-            "❌ حدث خطأ أثناء تعديل الملف.\n\n"
-            "🔎 تفاصيل الخطأ:\n"
-            f"{str(exc)}"
+            "❌ حدث خطأ أثناء تعديل الملف."
         )
 
         clear_file_conversation(context)
@@ -1785,8 +1800,9 @@ async def set_file_status(
             )
 
     except Exception as exc:
+        print("FILE STATUS ERROR:", type(exc).__name__, exc)
         await query.answer(
-            f"❌ فشل تحديث حالة الملف: {str(exc)}",
+            "❌ فشل تحديث حالة الملف.",
             show_alert=True,
         )
         return
@@ -1969,15 +1985,14 @@ async def confirm_delete_file(
             )
 
     except Exception as exc:
+        print("FILE DELETE ERROR:", type(exc).__name__, exc)
         await query.answer(
             "❌ فشل حذف الملف.",
             show_alert=True,
         )
 
         await query.edit_message_text(
-            "❌ حدث خطأ أثناء حذف الملف.\n\n"
-            "🔎 تفاصيل الخطأ:\n"
-            f"{str(exc)}"
+            "❌ حدث خطأ أثناء حذف الملف."
         )
         return
 
@@ -2003,10 +2018,18 @@ async def cancel_file_operation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if update.message is None or update.effective_user is None:
+        return None
+
+    if not is_file_session_owner(context, update.effective_user.id):
+        await update.message.reply_text("⛔ هذه العملية ليست لك.")
+        return None
+
     if update.message and update.message.from_user:
         user_id = update.message.from_user.id
 
         if not await has_file_permission(user_id):
+            clear_file_conversation(context)
             await update.message.reply_text(
                 "⛔ ليس لديك صلاحية إدارة الملفات."
             )
@@ -2034,6 +2057,34 @@ async def cancel_file_operation(
 # =========================
 # Conversation Handler
 # =========================
+
+async def back_from_file_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("admin_files_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if not await has_file_permission(user.id):
+        clear_file_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_files": admin_files,
+        "admin_file_list": admin_file_list,
+        "admin_file_sections": admin_file_sections,
+        "admin_file_subjects": admin_file_subjects,
+        "admin_file_stage": admin_file_stage,
+        "admin_back": admin_back,
+    }
+    clear_file_conversation(context)
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
 
 def file_conversation_handler():
     return ConversationHandler(
@@ -2095,6 +2146,7 @@ def file_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_file_operation, pattern='^(?:admin_files$|admin_file_list:|admin_file_sections:|admin_file_subjects:|admin_file_stage:|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_file_operation,
@@ -2126,7 +2178,7 @@ async def back_to_admin_files(
         )
         return
 
-    context.user_data[
+    context.admin_data[
         "admin_files_owner_id"
     ] = query.from_user.id
 

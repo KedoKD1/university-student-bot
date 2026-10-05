@@ -9,7 +9,10 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
-from bot.handlers.admin import is_admin
+from bot.utils.permissions import (
+    PERMISSION_MANAGE_SUBJECTS,
+    has_permission,
+)
 
 
 # =========================
@@ -45,7 +48,7 @@ def stages_admin_keyboard(stages):
     return InlineKeyboardMarkup(keyboard)
 
 
-def subjects_admin_keyboard(subjects, stage_id):
+def subjects_admin_keyboard(subjects, stage_id, owner_id):
     keyboard = []
 
     for subject in subjects:
@@ -63,7 +66,7 @@ def subjects_admin_keyboard(subjects, stage_id):
     keyboard.append([
         InlineKeyboardButton(
             text="➕ إضافة مادة",
-            callback_data=f"add_subject:{stage_id}",
+            callback_data=f"add_subject:{stage_id}:{owner_id}",
         )
     ])
 
@@ -81,6 +84,7 @@ def subject_manage_keyboard(
     subject_id,
     stage_id,
     is_active,
+    owner_id,
 ):
     if is_active:
         toggle_text = "🔴 تعطيل المادة"
@@ -98,7 +102,7 @@ def subject_manage_keyboard(
             InlineKeyboardButton(
                 text="✏️ تعديل المادة",
                 callback_data=(
-                    f"edit_subject:{subject_id}:{stage_id}"
+                    f"edit_subject:{subject_id}:{stage_id}:{owner_id}"
                 ),
             )
         ],
@@ -181,10 +185,11 @@ def clear_subject_conversation(context):
         "admin_subject_id",
         "admin_subject_name",
         "admin_subject_description",
+        "admin_subject_owner_id",
     ]
 
     for key in keys:
-        context.user_data.pop(key, None)
+        context.admin_data.pop(key, None)
 
 
 def normalize_text(text):
@@ -203,6 +208,77 @@ def normalize_description(text):
         return None
 
     return text
+
+
+def is_subject_session_owner(context, user_id):
+    return context.admin_data.get("admin_subject_owner_id") == user_id
+
+
+async def check_subject_message_access(update, context, state, required_keys):
+    user = update.effective_user
+    owner_id = context.admin_data.get("admin_subject_owner_id")
+
+    if user is None:
+        return state
+
+    if owner_id is not None and owner_id != user.id:
+        if update.message:
+            await update.message.reply_text("⛔ هذه العملية ليست لك.")
+        return state
+
+    if not await has_permission(user.id, PERMISSION_MANAGE_SUBJECTS, refresh=True):
+        clear_subject_conversation(context)
+        if update.message:
+            await update.message.reply_text("⛔ ليس لديك صلاحية.")
+        return ConversationHandler.END
+
+    if owner_id is None or any(
+        key not in context.admin_data or (
+            key != "admin_subject_description" and not context.admin_data.get(key)
+        )
+        for key in required_keys
+    ):
+        clear_subject_conversation(context)
+        if update.message:
+            await update.message.reply_text(
+                "❌ انتهت بيانات العملية.\nابدأ من لوحة الإدارة مرة أخرى."
+            )
+        return ConversationHandler.END
+
+    if update.message is None or update.message.text is None:
+        return state
+
+    return None
+
+
+async def parse_subject_operation(query, context, expected_length):
+    if query is None or query.from_user is None:
+        return None
+
+    if not await has_permission(query.from_user.id, PERMISSION_MANAGE_SUBJECTS, refresh=True):
+        if is_subject_session_owner(context, query.from_user.id):
+            clear_subject_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return None
+
+    parts = (query.data or "").split(":")
+    if len(parts) != expected_length or not all(parts):
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return None
+
+    try:
+        owner_id = int(parts[-1])
+    except ValueError:
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return None
+
+    if owner_id != query.from_user.id or context.admin_data.get(
+        "admin_subject_owner_id", owner_id
+    ) != owner_id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+
+    return parts[:-1]
 
 
 async def get_stage_subjects(stage_id):
@@ -224,6 +300,7 @@ async def send_subjects_list(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     stage_id,
+    owner_id,
 ):
     subjects = await get_stage_subjects(stage_id)
 
@@ -236,6 +313,7 @@ async def send_subjects_list(
         reply_markup=subjects_admin_keyboard(
             subjects,
             stage_id,
+            owner_id,
         ),
     )
 
@@ -285,6 +363,7 @@ async def show_subject_details(
             subject_id,
             stage_id,
             subject["is_active"],
+            query.from_user.id,
         ),
     )
 
@@ -302,7 +381,11 @@ async def admin_subjects(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
@@ -343,16 +426,20 @@ async def manage_stage(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
 
-    parts = query.data.split(":")
+    parts = (query.data or "").split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 2 or not all(parts):
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -378,16 +465,20 @@ async def back_to_stage_subjects(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
 
-    parts = query.data.split(":")
+    parts = (query.data or "").split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 2 or not all(parts):
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -416,6 +507,7 @@ async def show_stage_subjects(
         reply_markup=subjects_admin_keyboard(
             subjects,
             stage_id,
+            query.from_user.id,
         ),
     )
 
@@ -433,16 +525,20 @@ async def manage_subject(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
 
-    parts = query.data.split(":")
+    parts = (query.data or "").split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 3 or not all(parts):
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -471,30 +567,28 @@ async def start_add_subject(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return ConversationHandler.END
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
-
-    parts = query.data.split(":")
-
-    if len(parts) != 2:
-        await query.answer(
-            "❌ اختيار غير صالح.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
+    parts = await parse_subject_operation(query, context, 3)
+    if parts is None:
+        return None
 
     stage_id = parts[1]
 
-    clear_subject_conversation(context)
+    try:
+        response = supabase.table("stages").select("id").eq("id", stage_id).limit(1).execute()
+    except Exception as exc:
+        print("SUBJECT STAGE ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
+        await query.answer("❌ تعذر بدء العملية.", show_alert=True)
+        return ConversationHandler.END
+    if not response.data:
+        clear_subject_conversation(context)
+        await query.answer("❌ المرحلة غير موجودة.", show_alert=True)
+        return ConversationHandler.END
 
-    context.user_data["admin_subject_stage_id"] = stage_id
+    clear_subject_conversation(context)
+    context.admin_data["admin_subject_owner_id"] = query.from_user.id
+
+    context.admin_data["admin_subject_stage_id"] = stage_id
 
     await query.answer()
 
@@ -511,12 +605,11 @@ async def receive_add_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, ADD_NAME, ('admin_subject_stage_id',),
+    )
+    if access is not None:
+        return access
 
     name = normalize_text(update.message.text)
 
@@ -527,7 +620,7 @@ async def receive_add_name(
         )
         return ADD_NAME
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_subject_stage_id"
     )
 
@@ -541,15 +634,22 @@ async def receive_add_name(
 
         return ConversationHandler.END
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("id")
-        .eq("stage_id", stage_id)
-        .eq("name", name)
-        .limit(1)
-        .execute()
-    )
+    try:
+        response = (
+            supabase
+            .table("subjects")
+            .select("id")
+            .eq("stage_id", stage_id)
+            .eq("name", name)
+            .limit(1)
+            .execute()
+        )
+
+    except Exception as exc:
+        print("SUBJECT NAME CHECK ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
+        await update.message.reply_text("❌ تعذر التحقق من اسم المادة.")
+        return ConversationHandler.END
 
     if response.data:
         await update.message.reply_text(
@@ -559,7 +659,7 @@ async def receive_add_name(
 
         return ADD_NAME
 
-    context.user_data["admin_subject_name"] = name
+    context.admin_data["admin_subject_name"] = name
 
     await update.message.reply_text(
         "📝 أرسل وصف المادة.\n\n"
@@ -573,18 +673,17 @@ async def receive_add_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, ADD_DESCRIPTION, ('admin_subject_stage_id', 'admin_subject_name'),
+    )
+    if access is not None:
+        return access
 
     description = normalize_description(
         update.message.text
     )
 
-    context.user_data["admin_subject_description"] = (
+    context.admin_data["admin_subject_description"] = (
         description
     )
 
@@ -600,12 +699,12 @@ async def receive_add_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, ADD_ORDER,
+        ("admin_subject_stage_id", "admin_subject_name", "admin_subject_description"),
+    )
+    if access is not None:
+        return access
 
     text = update.message.text.strip()
 
@@ -627,15 +726,15 @@ async def receive_add_order(
 
         return ADD_ORDER
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_subject_stage_id"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_subject_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_subject_description"
     )
 
@@ -650,7 +749,10 @@ async def receive_add_order(
         return ConversationHandler.END
 
     try:
-        supabase.table("subjects").insert({
+        stage = supabase.table("stages").select("id").eq("id", stage_id).limit(1).execute()
+        if not stage.data:
+            raise ValueError("Stage no longer exists.")
+        response = supabase.table("subjects").insert({
             "stage_id": stage_id,
             "name": name,
             "description": description,
@@ -658,7 +760,12 @@ async def receive_add_order(
             "is_active": True,
         }).execute()
 
-    except Exception:
+        if not response.data:
+            raise ValueError("Supabase returned no saved subject.")
+
+    except Exception as exc:
+        print("SUBJECT SAVE ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
         await update.message.reply_text(
             "❌ حدث خطأ أثناء إضافة المادة.\n"
             "لم يتم حفظ المادة."
@@ -668,14 +775,14 @@ async def receive_add_order(
 
         return ConversationHandler.END
 
+    clear_subject_conversation(context)
+
     await update.message.reply_text(
         "✅ تمت إضافة المادة بنجاح.\n\n"
         f"📘 المادة: {name}\n"
         f"🔢 الترتيب: {sort_order}",
         reply_markup=after_save_keyboard(stage_id),
     )
-
-    clear_subject_conversation(context)
 
     return ConversationHandler.END
 
@@ -690,41 +797,34 @@ async def start_edit_subject(
 ):
     query = update.callback_query
 
-    if query is None or query.from_user is None:
-        return ConversationHandler.END
-
-    if not await is_admin(query.from_user.id):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
-
-    parts = query.data.split(":")
-
-    if len(parts) != 3:
-        await query.answer(
-            "❌ اختيار غير صالح.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
+    parts = await parse_subject_operation(query, context, 4)
+    if parts is None:
+        return None
 
     subject_id = parts[1]
     stage_id = parts[2]
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("*")
-        .eq("id", subject_id)
-        .eq("stage_id", stage_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        response = (
+            supabase
+            .table("subjects")
+            .select("*")
+            .eq("id", subject_id)
+            .eq("stage_id", stage_id)
+            .limit(1)
+            .execute()
+        )
+
+    except Exception as exc:
+        print("SUBJECT READ ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
+        await query.answer("❌ تعذر بدء العملية.", show_alert=True)
+        return ConversationHandler.END
 
     subjects = response.data or []
 
     if not subjects:
+        clear_subject_conversation(context)
         await query.answer(
             "❌ المادة غير موجودة.",
             show_alert=True,
@@ -734,9 +834,10 @@ async def start_edit_subject(
     subject = subjects[0]
 
     clear_subject_conversation(context)
+    context.admin_data["admin_subject_owner_id"] = query.from_user.id
 
-    context.user_data["admin_subject_stage_id"] = stage_id
-    context.user_data["admin_subject_id"] = subject_id
+    context.admin_data["admin_subject_stage_id"] = stage_id
+    context.admin_data["admin_subject_id"] = subject_id
 
     await query.answer()
 
@@ -754,12 +855,11 @@ async def receive_edit_name(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, EDIT_NAME, ('admin_subject_stage_id', 'admin_subject_id'),
+    )
+    if access is not None:
+        return access
 
     name = normalize_text(update.message.text)
 
@@ -771,11 +871,11 @@ async def receive_edit_name(
 
         return EDIT_NAME
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_subject_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_subject_id"
     )
 
@@ -789,16 +889,23 @@ async def receive_edit_name(
 
         return ConversationHandler.END
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("id")
-        .eq("stage_id", stage_id)
-        .eq("name", name)
-        .neq("id", subject_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        response = (
+            supabase
+            .table("subjects")
+            .select("id")
+            .eq("stage_id", stage_id)
+            .eq("name", name)
+            .neq("id", subject_id)
+            .limit(1)
+            .execute()
+        )
+
+    except Exception as exc:
+        print("SUBJECT NAME CHECK ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
+        await update.message.reply_text("❌ تعذر التحقق من اسم المادة.")
+        return ConversationHandler.END
 
     if response.data:
         await update.message.reply_text(
@@ -808,7 +915,7 @@ async def receive_edit_name(
 
         return EDIT_NAME
 
-    context.user_data["admin_subject_name"] = name
+    context.admin_data["admin_subject_name"] = name
 
     await update.message.reply_text(
         "📝 أرسل الوصف الجديد.\n\n"
@@ -822,18 +929,17 @@ async def receive_edit_description(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, EDIT_DESCRIPTION, ('admin_subject_stage_id', 'admin_subject_id', 'admin_subject_name'),
+    )
+    if access is not None:
+        return access
 
     description = normalize_description(
         update.message.text
     )
 
-    context.user_data["admin_subject_description"] = (
+    context.admin_data["admin_subject_description"] = (
         description
     )
 
@@ -849,12 +955,12 @@ async def receive_edit_order(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    if update.effective_user is None or update.message is None:
-        return ConversationHandler.END
-
-    if not await is_admin(update.effective_user.id):
-        clear_subject_conversation(context)
-        return ConversationHandler.END
+    access = await check_subject_message_access(
+        update, context, EDIT_ORDER,
+        ("admin_subject_stage_id", "admin_subject_id", "admin_subject_name", "admin_subject_description"),
+    )
+    if access is not None:
+        return access
 
     text = update.message.text.strip()
 
@@ -876,19 +982,19 @@ async def receive_edit_order(
 
         return EDIT_ORDER
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_subject_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_subject_id"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_subject_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_subject_description"
     )
 
@@ -903,7 +1009,7 @@ async def receive_edit_order(
         return ConversationHandler.END
 
     try:
-        supabase.table("subjects").update({
+        response = supabase.table("subjects").update({
             "name": name,
             "description": description,
             "sort_order": sort_order,
@@ -915,7 +1021,12 @@ async def receive_edit_order(
             stage_id,
         ).execute()
 
-    except Exception:
+        if not response.data:
+            raise ValueError("Supabase returned no saved subject.")
+
+    except Exception as exc:
+        print("SUBJECT SAVE ERROR:", type(exc).__name__, exc)
+        clear_subject_conversation(context)
         await update.message.reply_text(
             "❌ حدث خطأ أثناء تعديل المادة.\n"
             "لم يتم حفظ التعديلات."
@@ -925,14 +1036,14 @@ async def receive_edit_order(
 
         return ConversationHandler.END
 
+    clear_subject_conversation(context)
+
     await update.message.reply_text(
         "✅ تم تعديل المادة بنجاح.\n\n"
         f"📘 المادة: {name}\n"
         f"🔢 الترتيب: {sort_order}",
         reply_markup=after_save_keyboard(stage_id),
     )
-
-    clear_subject_conversation(context)
 
     return ConversationHandler.END
 
@@ -945,19 +1056,56 @@ async def cancel_subject_operation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    user = update.effective_user
+    if user is None:
+        return None
+    if context.admin_data.get("admin_subject_owner_id") is None:
+        clear_subject_conversation(context)
+        return ConversationHandler.END
+    if not is_subject_session_owner(context, user.id):
+        if update.message:
+            await update.message.reply_text("⛔ هذه العملية ليست لك.")
+        return None
+
+    allowed = await has_permission(user.id, PERMISSION_MANAGE_SUBJECTS, refresh=True)
     clear_subject_conversation(context)
-
-    if update.message is not None:
+    if update.message:
         await update.message.reply_text(
-            "↩️ تم إلغاء العملية."
+            "↩️ تم إلغاء العملية." if allowed else "⛔ ليس لديك صلاحية."
         )
-
     return ConversationHandler.END
 
 
 # =========================
 # Subject Conversation Handler
 # =========================
+
+async def back_from_subject_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("admin_subject_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if not await has_permission(user.id, PERMISSION_MANAGE_SUBJECTS, refresh=True):
+        clear_subject_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_subjects": admin_subjects,
+        "admin_stage_subjects": back_to_stage_subjects,
+        "manage_stage": manage_stage,
+        "manage_subject": manage_subject,
+        "admin_back": admin_back,
+    }
+    clear_subject_conversation(context)
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
 
 def subject_conversation_handler():
     return ConversationHandler(
@@ -1010,11 +1158,14 @@ def subject_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_subject_operation, pattern='^(?:admin_subjects$|admin_stage_subjects:|manage_stage:|manage_subject:|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_subject_operation,
             )
         ],
+        per_user=True,
+        per_chat=True,
         allow_reentry=False,
     )
 
@@ -1052,16 +1203,20 @@ async def set_subject_status(
     if query is None or query.from_user is None:
         return
 
-    if not await is_admin(query.from_user.id):
+    if not await has_permission(
+        query.from_user.id,
+        PERMISSION_MANAGE_SUBJECTS,
+        refresh=True,
+    ):
         await query.answer(
             "⛔ ليس لديك صلاحية.",
             show_alert=True,
         )
         return
 
-    parts = query.data.split(":")
+    parts = (query.data or "").split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 3 or not all(parts):
         await query.answer(
             "❌ اختيار غير صالح.",
             show_alert=True,
@@ -1072,7 +1227,7 @@ async def set_subject_status(
     stage_id = parts[2]
 
     try:
-        supabase.table("subjects").update({
+        response = supabase.table("subjects").update({
             "is_active": active
         }).eq(
             "id",
@@ -1082,7 +1237,12 @@ async def set_subject_status(
             stage_id,
         ).execute()
 
-    except Exception:
+        if not response.data:
+            await query.answer("❌ المادة غير موجودة.", show_alert=True)
+            return
+
+    except Exception as exc:
+        print("SUBJECT STATUS ERROR:", type(exc).__name__, exc)
         await query.answer(
             "❌ حدث خطأ أثناء تحديث حالة المادة.",
             show_alert=True,

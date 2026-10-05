@@ -373,6 +373,8 @@ async def get_role_permissions(
 async def has_permission(
     user_id: int,
     permission: str,
+    *,
+    refresh: bool = False,
 ) -> bool:
     """
     Check whether a user has a specific permission.
@@ -382,7 +384,13 @@ async def has_permission(
         admin      -> database permissions only
         moderator  -> database permissions only
         others     -> denied
+
+    refresh=True reloads the user's role and DB grants for protected
+    Admin updates, including message steps in an active conversation.
     """
+
+    if refresh:
+        clear_permission_cache(user_id)
 
     role = await get_role(
         user_id
@@ -449,11 +457,37 @@ async def require_permission(
     return False
 
 
+async def require_callback_owner(query) -> bool:
+    """Check the owner suffix on a conversation's inline button."""
+    if query is None or query.from_user is None:
+        return False
+
+    data = query.data
+    if not isinstance(data, str) or ":" not in data:
+        await query.answer("❌ انتهت بيانات العملية.", show_alert=True)
+        return False
+
+    try:
+        owner_id = int(data.rsplit(":", 1)[1])
+    except ValueError:
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return False
+
+    if owner_id != query.from_user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return False
+
+    return True
+
+
 # ============================================================
 # Permission required by callback prefix
 # ============================================================
 
 CALLBACK_PERMISSIONS = {
+
+    "admin_back": PERMISSION_VIEW_ADMIN,
+    "admin_tools": PERMISSION_VIEW_ADMIN,
 
     # ========================================================
     # Subjects
@@ -463,6 +497,8 @@ CALLBACK_PERMISSIONS = {
     "admin_stage_subjects": PERMISSION_MANAGE_SUBJECTS,
     "manage_stage": PERMISSION_MANAGE_SUBJECTS,
     "manage_subject": PERMISSION_MANAGE_SUBJECTS,
+    "add_subject": PERMISSION_MANAGE_SUBJECTS,
+    "edit_subject": PERMISSION_MANAGE_SUBJECTS,
     "disable_subject": PERMISSION_MANAGE_SUBJECTS,
     "enable_subject": PERMISSION_MANAGE_SUBJECTS,
     "admin_delete_subject": PERMISSION_MANAGE_SUBJECTS,
@@ -480,6 +516,8 @@ CALLBACK_PERMISSIONS = {
     "admin_file_section": PERMISSION_MANAGE_FILES,
     "admin_file_list": PERMISSION_MANAGE_FILES,
     "manage_file": PERMISSION_MANAGE_FILES,
+    "add_file": PERMISSION_MANAGE_FILES,
+    "edit_file": PERMISSION_MANAGE_FILES,
     "disable_file": PERMISSION_MANAGE_FILES,
     "enable_file": PERMISSION_MANAGE_FILES,
     "delete_file": PERMISSION_MANAGE_FILES,
@@ -497,6 +535,8 @@ CALLBACK_PERMISSIONS = {
     "admin_summary_section": PERMISSION_MANAGE_SUMMARIES,
     "admin_summary_list": PERMISSION_MANAGE_SUMMARIES,
     "manage_summary": PERMISSION_MANAGE_SUMMARIES,
+    "add_summary": PERMISSION_MANAGE_SUMMARIES,
+    "edit_summary": PERMISSION_MANAGE_SUMMARIES,
     "disable_summary": PERMISSION_MANAGE_SUMMARIES,
     "enable_summary": PERMISSION_MANAGE_SUMMARIES,
     "delete_summary": PERMISSION_MANAGE_SUMMARIES,
@@ -507,6 +547,8 @@ CALLBACK_PERMISSIONS = {
     # ========================================================
 
     "admin_drawings": PERMISSION_MANAGE_DRAWINGS,
+    "admin_drawings_owner": PERMISSION_MANAGE_DRAWINGS,
+    "admin_drawing_back": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_stage": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_subject": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_subjects": PERMISSION_MANAGE_DRAWINGS,
@@ -514,6 +556,8 @@ CALLBACK_PERMISSIONS = {
     "admin_drawing_section": PERMISSION_MANAGE_DRAWINGS,
     "admin_drawing_list": PERMISSION_MANAGE_DRAWINGS,
     "manage_drawing": PERMISSION_MANAGE_DRAWINGS,
+    "add_drawing": PERMISSION_MANAGE_DRAWINGS,
+    "edit_drawing": PERMISSION_MANAGE_DRAWINGS,
     "disable_drawing": PERMISSION_MANAGE_DRAWINGS,
     "enable_drawing": PERMISSION_MANAGE_DRAWINGS,
     "delete_drawing": PERMISSION_MANAGE_DRAWINGS,
@@ -524,7 +568,10 @@ CALLBACK_PERMISSIONS = {
     # ========================================================
 
     "admin_schedules": PERMISSION_MANAGE_SCHEDULES,
+    "admin_schedules_back": PERMISSION_MANAGE_SCHEDULES,
+    "admin_schedule_back": PERMISSION_MANAGE_SCHEDULES,
     "admin_schedule_stage": PERMISSION_MANAGE_SCHEDULES,
+    "add_schedule": PERMISSION_MANAGE_SCHEDULES,
     "delete_schedule": PERMISSION_MANAGE_SCHEDULES,
 
     # ========================================================
@@ -532,6 +579,8 @@ CALLBACK_PERMISSIONS = {
     # ========================================================
 
     "admin_grades": PERMISSION_MANAGE_GRADES,
+    "admin_grades_back": PERMISSION_MANAGE_GRADES,
+    "admin_grade_list_back": PERMISSION_MANAGE_GRADES,
     "admin_grade_stage": PERMISSION_MANAGE_GRADES,
     "admin_grade_list": PERMISSION_MANAGE_GRADES,
     "manage_grade": PERMISSION_MANAGE_GRADES,
@@ -552,7 +601,12 @@ CALLBACK_PERMISSIONS = {
     "admin_exam_list": PERMISSION_MANAGE_EXAMS,
     "manage_exam": PERMISSION_MANAGE_EXAMS,
     "add_exam": PERMISSION_MANAGE_EXAMS,
+    "add_exam_type": PERMISSION_MANAGE_EXAMS,
+    "exam_subject": PERMISSION_MANAGE_EXAMS,
     "edit_exam": PERMISSION_MANAGE_EXAMS,
+    "edit_exam_type": PERMISSION_MANAGE_EXAMS,
+    "edit_exam_subject": PERMISSION_MANAGE_EXAMS,
+    "cancel_exam": PERMISSION_MANAGE_EXAMS,
     "disable_exam": PERMISSION_MANAGE_EXAMS,
     "enable_exam": PERMISSION_MANAGE_EXAMS,
     "delete_exam": PERMISSION_MANAGE_EXAMS,
@@ -566,6 +620,8 @@ CALLBACK_PERMISSIONS = {
     "bundle_desc_type": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_stage": PERMISSION_MANAGE_DESCRIPTIONS,
     "bundle_desc_subject": PERMISSION_MANAGE_DESCRIPTIONS,
+    "bundle_desc_back_stage": PERMISSION_MANAGE_DESCRIPTIONS,
+    "bundle_desc_cancel": PERMISSION_MANAGE_DESCRIPTIONS,
 
     # ========================================================
     # Statistics
@@ -578,6 +634,7 @@ CALLBACK_PERMISSIONS = {
     # ========================================================
 
     "admin_roles": PERMISSION_MANAGE_ADMINS,
+    "role_add": PERMISSION_MANAGE_ADMINS,
     "role_manage": PERMISSION_MANAGE_ADMINS,
     "change_role": PERMISSION_MANAGE_ADMINS,
     "remove_role": PERMISSION_MANAGE_ADMINS,
@@ -609,7 +666,7 @@ CALLBACK_PERMISSIONS = {
 def permission_for_callback(
     callback_data: str,
 ):
-    if not callback_data:
+    if not isinstance(callback_data, str) or not callback_data:
         return None
 
     prefix = callback_data.split(

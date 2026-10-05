@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
+from bot.utils.admin_context import AdminContext
 
 from bot.handlers.main_menu import (
     show_main_menu,
@@ -106,6 +107,8 @@ from bot.handlers.admin_summaries import (
 
 from bot.handlers.admin_drawings import (
     admin_drawings,
+    admin_drawing_back,
+    admin_drawings_owner,
     admin_drawing_stage,
     admin_drawing_subject,
     admin_drawing_subjects,
@@ -128,6 +131,8 @@ from bot.handlers.schedules import (
 
 from bot.handlers.admin_schedules import (
     admin_schedules,
+    admin_schedules_back,
+    admin_schedule_back,
     admin_schedule_stage,
     delete_schedule,
     schedule_conversation_handler,
@@ -140,7 +145,9 @@ from bot.handlers.grades import (
 from bot.handlers.admin_grades import (
     admin_grades,
     admin_grade_stage,
-    show_grade_list,
+    admin_grade_list,
+    admin_grades_back,
+    admin_grade_list_back,
     manage_grade,
     disable_grade,
     enable_grade,
@@ -267,6 +274,7 @@ def main():
         Application
         .builder()
         .token(BOT_TOKEN)
+        .context_types(ContextTypes(context=AdminContext))
         .build()
     )
 
@@ -848,6 +856,20 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            admin_drawing_back,
+            pattern=r"^admin_drawing_back:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_drawings_owner,
+            pattern=r"^admin_drawings_owner:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             admin_drawings,
             pattern=r"^admin_drawings$",
         )
@@ -936,6 +958,20 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            admin_schedules_back,
+            pattern=r"^admin_schedules_back:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_schedule_back,
+            pattern=r"^admin_schedule_back:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             admin_schedules,
             pattern=r"^admin_schedules$",
         )
@@ -961,6 +997,20 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
+            admin_grades_back,
+            pattern=r"^admin_grades_back:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_grade_list_back,
+            pattern=r"^admin_grade_list_back:",
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
             admin_grades,
             pattern=r"^admin_grades$",
         )
@@ -975,7 +1025,7 @@ def main():
 
     application.add_handler(
         CallbackQueryHandler(
-            show_grade_list,
+            admin_grade_list,
             pattern=r"^admin_grade_list:",
         )
     )
@@ -1018,6 +1068,13 @@ def main():
     # ========================================================
     # Admin exams
     # ========================================================
+
+    application.add_handler(
+        CallbackQueryHandler(
+            admin_exam_stage,
+            pattern=r"^admin_exam_list:",
+        )
+    )
 
     application.add_handler(
         CallbackQueryHandler(

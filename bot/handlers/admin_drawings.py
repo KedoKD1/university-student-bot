@@ -14,6 +14,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_DRAWINGS,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -94,6 +95,7 @@ async def has_drawing_permission(user_id):
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_DRAWINGS,
+        refresh=True,
     )
 
 
@@ -110,12 +112,12 @@ def clear_drawing_conversation(context):
     ]
 
     for key in keys:
-        context.user_data.pop(key, None)
+        context.admin_data.pop(key, None)
 
 
 def is_drawing_session_owner(context, user_id):
     return (
-        context.user_data.get("admin_drawing_owner_id")
+        context.admin_data.get("admin_drawing_owner_id")
         == user_id
     )
 
@@ -133,7 +135,7 @@ async def check_drawing_access(query, context):
         )
         return False
 
-    owner_id = context.user_data.get(
+    owner_id = context.admin_data.get(
         "admin_drawing_owner_id"
     )
 
@@ -156,7 +158,11 @@ async def check_drawing_message_access(
 
     user_id = update.effective_user.id
 
+    if context.admin_data.get("admin_drawing_owner_id", user_id) != user_id:
+        return False
+
     if not await has_drawing_permission(user_id):
+        clear_drawing_conversation(context)
         if update.message:
             await update.message.reply_text(
                 "⛔ ليس لديك صلاحية إدارة الرسومات."
@@ -530,7 +536,7 @@ async def admin_drawings(
 
     owner_id = query.from_user.id
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_owner_id"
     ] = owner_id
 
@@ -1402,7 +1408,7 @@ async def start_add_drawing(
 
     clear_drawing_conversation(context)
 
-    context.user_data.update({
+    context.admin_data.update({
         "admin_drawing_stage_id": stage_id,
         "admin_drawing_subject_id": subject_id,
         "admin_drawing_section_type": section_type,
@@ -1444,7 +1450,7 @@ async def receive_drawing_name(
 
         return ADD_DRAWING_NAME
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_name"
     ] = name
 
@@ -1473,7 +1479,7 @@ async def receive_drawing_description(
         update.message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_description"
     ] = description
 
@@ -1514,7 +1520,7 @@ async def receive_drawing_order(
 
         return ADD_DRAWING_ORDER
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_order"
     ] = order
 
@@ -1559,27 +1565,27 @@ async def receive_drawing_upload(
 
         return ADD_DRAWING_UPLOAD
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_drawing_stage_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_drawing_subject_id"
     )
 
-    section_type = context.user_data.get(
+    section_type = context.admin_data.get(
         "admin_drawing_section_type"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_drawing_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_drawing_description"
     )
 
-    sort_order = context.user_data.get(
+    sort_order = context.admin_data.get(
         "admin_drawing_order",
         0,
     )
@@ -1621,6 +1627,7 @@ async def receive_drawing_upload(
         )
 
     except Exception as exc:
+        clear_drawing_conversation(context)
         print(
             f"DRAWING INSERT ERROR: {exc}"
         )
@@ -1718,7 +1725,7 @@ async def start_edit_drawing(
         context
     )
 
-    context.user_data.update({
+    context.admin_data.update({
         "admin_drawing_id": drawing_id,
         "admin_drawing_stage_id": stage_id,
         "admin_drawing_subject_id": subject_id,
@@ -1763,7 +1770,7 @@ async def receive_edit_drawing_name(
 
         return EDIT_DRAWING_NAME
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_name"
     ] = name
 
@@ -1792,7 +1799,7 @@ async def receive_edit_drawing_description(
         update.message.text
     )
 
-    context.user_data[
+    context.admin_data[
         "admin_drawing_description"
     ] = description
 
@@ -1833,27 +1840,27 @@ async def receive_edit_drawing_order(
 
         return EDIT_DRAWING_ORDER
 
-    drawing_id = context.user_data.get(
+    drawing_id = context.admin_data.get(
         "admin_drawing_id"
     )
 
-    subject_id = context.user_data.get(
+    subject_id = context.admin_data.get(
         "admin_drawing_subject_id"
     )
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "admin_drawing_stage_id"
     )
 
-    section_type = context.user_data.get(
+    section_type = context.admin_data.get(
         "admin_drawing_section_type"
     )
 
-    name = context.user_data.get(
+    name = context.admin_data.get(
         "admin_drawing_name"
     )
 
-    description = context.user_data.get(
+    description = context.admin_data.get(
         "admin_drawing_description"
     )
 
@@ -1876,7 +1883,7 @@ async def receive_edit_drawing_order(
         return ConversationHandler.END
 
     try:
-        (
+        response = (
             supabase
             .table("drawings")
             .update({
@@ -1887,10 +1894,14 @@ async def receive_edit_drawing_order(
             })
             .eq("id", drawing_id)
             .eq("subject_id", subject_id)
+            .is_("deleted_at", "null")
             .execute()
         )
+        if not response.data:
+            raise ValueError("Supabase returned no updated drawing.")
 
     except Exception as exc:
+        clear_drawing_conversation(context)
         print(
             f"DRAWING UPDATE ERROR: {exc}"
         )
@@ -2278,6 +2289,9 @@ async def cancel_drawing(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if update.effective_user is None or not is_drawing_session_owner(context, update.effective_user.id):
+        return None
+
     if not await check_drawing_message_access(
         update,
         context,
@@ -2299,6 +2313,38 @@ async def cancel_drawing(
 # =========================
 # Conversation Handler
 # =========================
+
+async def back_from_drawing_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("admin_drawing_owner_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if prefix in {'admin_drawing_stage', 'admin_drawings_owner', 'admin_drawing_list', 'admin_drawing_back', 'admin_drawing_subjects'} and not await require_callback_owner(query):
+        return None
+    if not await has_drawing_permission(user.id):
+        clear_drawing_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_drawings": admin_drawings,
+        "admin_drawings_owner": admin_drawings_owner,
+        "admin_drawing_list": admin_drawing_list,
+        "admin_drawing_subjects": admin_drawing_subjects,
+        "admin_drawing_stage": admin_drawing_stage,
+        "admin_drawing_back": admin_drawing_back,
+        "admin_back": admin_back,
+    }
+    clear_drawing_conversation(context)
+    context.admin_data["admin_drawing_owner_id"] = user.id
+    await navigation[prefix](update, context)
+    return ConversationHandler.END
+
 
 def drawing_conversation_handler():
     return ConversationHandler(
@@ -2372,6 +2418,7 @@ def drawing_conversation_handler():
         },
 
         fallbacks=[
+            CallbackQueryHandler(back_from_drawing_operation, pattern='^(?:admin_drawings$|admin_drawings_owner:|admin_drawing_list:|admin_drawing_subjects:|admin_drawing_stage:|admin_drawing_back:|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_drawing,

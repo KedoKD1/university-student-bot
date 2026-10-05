@@ -16,6 +16,7 @@ from bot.database.client import supabase
 from bot.utils.permissions import (
     PERMISSION_MANAGE_SCHEDULES,
     has_permission,
+    require_callback_owner,
 )
 
 
@@ -26,6 +27,7 @@ async def has_schedule_permission(user_id: int) -> bool:
     return await has_permission(
         user_id,
         PERMISSION_MANAGE_SCHEDULES,
+        refresh=True,
     )
 
 
@@ -34,7 +36,7 @@ def is_schedule_session_owner(
     user_id: int,
 ) -> bool:
     return (
-        context.user_data.get("schedule_admin_id")
+        context.admin_data.get("schedule_admin_id")
         == user_id
     )
 
@@ -79,7 +81,11 @@ async def check_schedule_message_access(
 
     user_id = user.id
 
+    if context.admin_data.get("schedule_admin_id", user_id) != user_id:
+        return False
+
     if not await has_schedule_permission(user_id):
+        clear_schedule_conversation(context)
         return False
 
     if not is_schedule_session_owner(
@@ -98,7 +104,7 @@ def clear_schedule_conversation(
         "schedule_stage_id",
         "schedule_admin_id",
     ):
-        context.user_data.pop(
+        context.admin_data.pop(
             key,
             None,
         )
@@ -146,7 +152,7 @@ async def admin_schedules(
 
     clear_schedule_conversation(context)
 
-    context.user_data["schedule_admin_id"] = user_id
+    context.admin_data["schedule_admin_id"] = user_id
 
     await query.answer()
 
@@ -241,7 +247,7 @@ async def admin_schedule_stage(
         )
         return
 
-    context.user_data["schedule_admin_id"] = owner_id
+    context.admin_data["schedule_admin_id"] = owner_id
 
     await query.answer()
 
@@ -375,7 +381,7 @@ async def admin_schedules_back(
         )
         return
 
-    context.user_data["schedule_admin_id"] = owner_id
+    context.admin_data["schedule_admin_id"] = owner_id
 
     await query.answer()
 
@@ -470,7 +476,7 @@ async def admin_schedule_back(
 
     await query.answer()
 
-    context.user_data["schedule_admin_id"] = owner_id
+    context.admin_data["schedule_admin_id"] = owner_id
 
     keyboard = [
         [
@@ -535,8 +541,8 @@ async def start_add_schedule(
         )
         return ConversationHandler.END
 
-    context.user_data["schedule_stage_id"] = stage_id
-    context.user_data["schedule_admin_id"] = user_id
+    context.admin_data["schedule_stage_id"] = stage_id
+    context.admin_data["schedule_admin_id"] = user_id
 
     await query.answer()
 
@@ -561,9 +567,11 @@ async def receive_schedule_image(
         update,
         context,
     ):
+        if context.admin_data.get("schedule_admin_id") is None:
+            return ConversationHandler.END
         return ADD_SCHEDULE_IMAGE
 
-    stage_id = context.user_data.get(
+    stage_id = context.admin_data.get(
         "schedule_stage_id"
     )
 
@@ -789,7 +797,11 @@ async def cancel_schedule(
     if user is None:
         return ConversationHandler.END
 
+    if not is_schedule_session_owner(context, user.id):
+        return None
+
     if not await has_schedule_permission(user.id):
+        clear_schedule_conversation(context)
         return ConversationHandler.END
 
     if not is_schedule_session_owner(
@@ -805,6 +817,36 @@ async def cancel_schedule(
             "❌ تم إلغاء العملية."
         )
 
+    return ConversationHandler.END
+
+
+async def back_from_schedule_operation(update, context):
+    query = update.callback_query
+    user = update.effective_user
+    if query is None or user is None:
+        return None
+    if context.admin_data.get("schedule_admin_id") != user.id:
+        await query.answer("⛔ هذه العملية ليست لك.", show_alert=True)
+        return None
+    prefix = (query.data or "").split(":", 1)[0]
+    if prefix in {'admin_schedule_back', 'admin_schedules_back', 'admin_schedule_stage'} and not await require_callback_owner(query):
+        return None
+    if not await has_schedule_permission(user.id):
+        clear_schedule_conversation(context)
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return ConversationHandler.END
+
+    from bot.handlers.admin import admin_back
+    navigation = {
+        "admin_schedules": admin_schedules,
+        "admin_schedule_stage": admin_schedule_stage,
+        "admin_schedules_back": admin_schedules_back,
+        "admin_schedule_back": admin_schedule_back,
+        "admin_back": admin_back,
+    }
+    clear_schedule_conversation(context)
+    context.admin_data["schedule_admin_id"] = user.id
+    await navigation[prefix](update, context)
     return ConversationHandler.END
 
 
@@ -825,6 +867,7 @@ def schedule_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(back_from_schedule_operation, pattern='^(?:admin_schedules$|admin_schedule_stage:|admin_schedules_back:|admin_schedule_back:|admin_back$)'),
             CommandHandler(
                 "cancel",
                 cancel_schedule,
