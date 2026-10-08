@@ -169,6 +169,8 @@ def count_rows(
             "is_active",
             True,
         )
+        if table in {"files", "summaries", "drawings"}:
+            builder = builder.is_("deleted_at", "null")
 
     try:
         result = builder.execute()
@@ -441,8 +443,16 @@ async def admin_roles(
 # ============================================================
 
 def clear_role_conversation(context):
-    for key in ("role_target_id", "role_target_username", "role_owner_id"):
+    for key in ("role_target_id", "role_target_username", "role_owner_id", "role_target_role"):
         context.admin_data.pop(key, None)
+
+
+def role_selection_keyboard(target_id, owner_id, current_role=None):
+    rows = [[InlineKeyboardButton(
+        ROLE_NAMES[role], callback_data=f"set_role:{role}:{target_id}:{owner_id}"
+    )] for role in ("admin", "moderator") if role != current_role]
+    rows.append([InlineKeyboardButton("❌ إلغاء", callback_data="admin_roles")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def role_add_start(
@@ -603,10 +613,6 @@ async def role_receive_username(
                 "telegram_id",
                 target_id,
             )
-            .eq(
-                "is_active",
-                True,
-            )
             .limit(1)
             .execute()
         )
@@ -648,6 +654,8 @@ async def role_receive_username(
     context.admin_data[
         "role_target_username"
     ] = target_username
+    current = existing_rows[0] if existing_rows else {}
+    context.admin_data["role_target_role"] = (current.get("role"), current.get("is_active") is True)
 
     name_line = (
         f"👤 الاسم: {target_name}\n"
@@ -660,26 +668,9 @@ async def role_receive_username(
         f"@{target_username}\n"
         f"{name_line}\n"
         "اختر الرتبة:",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "🛡️ Admin",
-                    callback_data=f'set_role:admin:{target_id}:{update.effective_user.id}',
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🔧 Moderator",
-                    callback_data=f'set_role:moderator:{target_id}:{update.effective_user.id}',
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "❌ إلغاء",
-                    callback_data="admin_roles",
-                )
-            ],
-        ]),
+        reply_markup=role_selection_keyboard(
+            target_id, user.id, current.get("role") if current.get("is_active") is True else None
+        ),
     )
 
     return ROLE_SELECTION
@@ -774,6 +765,17 @@ async def set_role(
 
         rows = existing.data or []
 
+        current = rows[0] if rows else {}
+        snapshot = (current.get("role"), current.get("is_active") is True)
+        if context.admin_data.get("role_target_role") != snapshot:
+            clear_role_conversation(context)
+            await query.answer("❌ تغيرت رتبة المستخدم. أعد فتح العملية.", show_alert=True)
+            return ConversationHandler.END
+        if snapshot == (role, True):
+            clear_role_conversation(context)
+            await query.answer("ℹ️ المستخدم يحمل هذه الرتبة بالفعل.", show_alert=True)
+            return ConversationHandler.END
+
         if rows:
             current_role = rows[0].get(
                 "role"
@@ -786,7 +788,7 @@ async def set_role(
                 )
                 return
 
-            (
+            saved = (
                 supabase
                 .table("admins")
                 .update({
@@ -797,8 +799,12 @@ async def set_role(
                     "id",
                     rows[0]["id"],
                 )
+                .eq("role", current_role)
+                .eq("is_active", current.get("is_active"))
                 .execute()
             )
+            if not saved.data:
+                raise RuntimeError("Role changed during update")
 
         else:
             (
@@ -901,7 +907,7 @@ async def role_manage(
         supabase
         .table("admins")
         .select(
-            "id, telegram_id, role"
+            "id, telegram_id, role, is_active"
         )
         .eq(
             "id",
@@ -956,6 +962,10 @@ async def role_manage(
         "role"
     )
 
+    if not admin.get("is_active"):
+        await query.answer("❌ انتهت بيانات المشرف. أعد فتح القائمة.", show_alert=True)
+        return
+
     await query.answer()
 
     # Owner can be viewed but never modified.
@@ -982,31 +992,31 @@ async def role_manage(
         f"🏷️ الرتبة: "
         f"{ROLE_NAMES.get(current_role, current_role)}\n\n"
         "اختر العملية:",
-        reply_markup=InlineKeyboardMarkup([
+        reply_markup=InlineKeyboardMarkup([row for row in [
             [
                 InlineKeyboardButton(
                     "🛡️ تحويل إلى Admin",
                     callback_data=(
                         f"change_role:"
-                        f"{admin['id']}:admin"
+                        f"{admin['telegram_id']}:admin:{current_role}:{query.from_user.id}"
                     ),
                 )
-            ],
+            ] if current_role != "admin" else [],
             [
                 InlineKeyboardButton(
                     "🔧 تحويل إلى Moderator",
                     callback_data=(
                         f"change_role:"
-                        f"{admin['id']}:moderator"
+                        f"{admin['telegram_id']}:moderator:{current_role}:{query.from_user.id}"
                     ),
                 )
-            ],
+            ] if current_role != "moderator" else [],
             [
                 InlineKeyboardButton(
                     "❌ إزالة الرتبة",
                     callback_data=(
                         f"remove_role:"
-                        f"{admin['id']}"
+                        f"{admin['telegram_id']}:{current_role}:{query.from_user.id}"
                     ),
                 )
             ],
@@ -1016,7 +1026,7 @@ async def role_manage(
                     callback_data="admin_roles",
                 )
             ],
-        ]),
+        ] if row]),
     )
 
 
@@ -1046,15 +1056,19 @@ async def change_role(
 
     parts = query.data.split(":")
 
-    if len(parts) != 3:
+    if len(parts) != 5 or not parts[1].isdigit():
         await query.answer(
             "❌ بيانات الرتبة غير صحيحة.",
             show_alert=True,
         )
         return
 
-    admin_id = parts[1]
+    if not await require_callback_owner(query):
+        return
+
+    target_id = parts[1]
     role = parts[2]
+    expected_role = parts[3]
 
     if role not in {
         "admin",
@@ -1071,11 +1085,11 @@ async def change_role(
             supabase
             .table("admins")
             .select(
-                "id, telegram_id, role"
+                "id, telegram_id, role, is_active"
             )
             .eq(
-                "id",
-                admin_id,
+                "telegram_id",
+                target_id,
             )
             .limit(1)
             .execute()
@@ -1099,7 +1113,11 @@ async def change_role(
             )
             return
 
-        (
+        if not admin.get("is_active") or admin.get("role") != expected_role or role == expected_role:
+            await query.answer("❌ هذا الاختيار قديم أو الرتبة مطبقة بالفعل. أعد فتح القائمة.", show_alert=True)
+            return
+
+        saved = (
             supabase
             .table("admins")
             .update({
@@ -1108,10 +1126,16 @@ async def change_role(
             })
             .eq(
                 "id",
-                admin_id,
+                admin["id"],
             )
+            .eq("telegram_id", target_id)
+            .eq("role", expected_role)
+            .eq("is_active", True)
             .execute()
         )
+        if not saved.data:
+            await query.answer("❌ تغيرت بيانات المشرف. أعد فتح القائمة.", show_alert=True)
+            return
 
         clear_permission_cache(
             admin["telegram_id"]
@@ -1166,30 +1190,31 @@ async def remove_role(
         )
         return
 
-    parts = query.data.split(
-        ":",
-        1,
-    )
+    parts = query.data.split(":")
 
-    if len(parts) != 2:
+    if len(parts) != 4 or not parts[1].isdigit():
         await query.answer(
             "❌ بيانات غير صحيحة.",
             show_alert=True,
         )
         return
 
-    admin_id = parts[1]
+    if not await require_callback_owner(query):
+        return
+
+    target_id = parts[1]
+    expected_role = parts[2]
 
     try:
         existing = (
             supabase
             .table("admins")
             .select(
-                "id, telegram_id, role"
+                "id, telegram_id, role, is_active"
             )
             .eq(
-                "id",
-                admin_id,
+                "telegram_id",
+                target_id,
             )
             .limit(1)
             .execute()
@@ -1213,7 +1238,11 @@ async def remove_role(
             )
             return
 
-        (
+        if not admin.get("is_active") or admin.get("role") != expected_role:
+            await query.answer("❌ هذا الاختيار قديم. أعد فتح القائمة.", show_alert=True)
+            return
+
+        saved = (
             supabase
             .table("admins")
             .update({
@@ -1221,10 +1250,16 @@ async def remove_role(
             })
             .eq(
                 "id",
-                admin_id,
+                admin["id"],
             )
+            .eq("telegram_id", target_id)
+            .eq("role", expected_role)
+            .eq("is_active", True)
             .execute()
         )
+        if not saved.data:
+            await query.answer("❌ تغيرت بيانات المشرف. أعد فتح القائمة.", show_alert=True)
+            return
 
         clear_permission_cache(
             admin["telegram_id"]

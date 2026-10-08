@@ -752,6 +752,9 @@ async def setting_value(
             value,
             message.from_user.id,
         )
+        if key == SETTING_REQUIRED_CHANNEL_ID:
+            from bot.utils.subscription import invalidate_subscription
+            invalidate_subscription(context)
 
     except Exception as exc:
         print(

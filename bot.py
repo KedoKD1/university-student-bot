@@ -2,6 +2,7 @@ from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     MessageHandler,
     TypeHandler,
@@ -12,6 +13,7 @@ from telegram.ext import (
 
 from bot.database.client import supabase
 from bot.utils.admin_context import AdminContext
+from bot.utils.subscription import subscription_guard, subscription_membership_changed, verify_subscription
 
 from bot.handlers.main_menu import (
     show_main_menu,
@@ -282,6 +284,8 @@ def main():
         global_error_handler
     )
 
+    application.add_handler(TypeHandler(Update, subscription_guard), group=-4)
+
     # ========================================================
     # Global logging
     # ========================================================
@@ -291,7 +295,7 @@ def main():
             Update,
             log_update,
         ),
-        group=-3,
+        group=-6,
     )
 
     # ========================================================
@@ -310,16 +314,30 @@ def main():
     # ========================================================
 
     application.add_handler(
+        ChatMemberHandler(subscription_membership_changed, ChatMemberHandler.CHAT_MEMBER),
+        group=-5,
+    )
+
+    application.add_handler(
+        ChatMemberHandler(track_user, ChatMemberHandler.MY_CHAT_MEMBER),
+        group=-5,
+    )
+
+    application.add_handler(
         TypeHandler(
             Update,
             track_user,
         ),
-        group=-1,
+        group=-5,
     )
 
     # ========================================================
     # Commands
     # ========================================================
+
+    application.add_handler(CallbackQueryHandler(
+        verify_subscription, pattern=r"^verify_subscription:\d+$"
+    ))
 
     application.add_handler(
         CommandHandler(
