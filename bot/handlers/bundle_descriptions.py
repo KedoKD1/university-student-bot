@@ -495,7 +495,10 @@ async def choose_description_subject(
         "أرسل الوصف الجديد الآن.\n"
         "لإزالة الوصف بالكامل اكتب:\n"
         "بدون وصف\n\n"
-        "❌ للإلغاء أرسل /cancel"
+        "❌ للإلغاء أرسل /cancel",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ إلغاء", callback_data=f"bundle_desc_cancel:{user_id}")
+        ]]),
     )
 
     return DESC_TEXT
@@ -843,10 +846,6 @@ def bundle_description_conversation_handler():
                     choose_description_stage,
                     pattern=r"^bundle_desc_stage:",
                 ),
-                CallbackQueryHandler(
-                    bundle_description_cancel,
-                    pattern=r"^bundle_desc_cancel:",
-                ),
             ],
             DESC_SUBJECT: [
                 CallbackQueryHandler(
@@ -857,10 +856,6 @@ def bundle_description_conversation_handler():
                     bundle_description_back_stage,
                     pattern=r"^bundle_desc_back_stage:",
                 ),
-                CallbackQueryHandler(
-                    bundle_description_cancel,
-                    pattern=r"^bundle_desc_cancel:",
-                ),
             ],
             DESC_TEXT: [
                 MessageHandler(
@@ -870,6 +865,7 @@ def bundle_description_conversation_handler():
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(bundle_description_cancel, pattern=r"^bundle_desc_cancel:\d+$"),
             CallbackQueryHandler(back_from_description_operation, pattern='^(?:bundle_descriptions$|admin_tools$|admin_back$)'),
             CommandHandler(
                 "cancel",

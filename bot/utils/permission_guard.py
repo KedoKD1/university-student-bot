@@ -75,6 +75,10 @@ async def permission_guard(
     if callback_data in {"admin_back", "admin_tools"}:
         return
 
+    # Owned cancellation only clears local state; revoked grants must not trap it.
+    if callback_data.split(":", 1)[0] in {"notify_cancel", "bundle_desc_cancel"}:
+        return
+
     try:
         allowed = await has_permission(
             user.id,

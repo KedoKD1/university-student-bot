@@ -8,6 +8,7 @@ from telegram import (
 )
 from telegram.error import (
     BadRequest,
+    ChatMigrated,
     Forbidden,
     RetryAfter,
     TelegramError,
@@ -21,6 +22,7 @@ from telegram.ext import (
 )
 
 from bot.database.client import supabase
+from bot.utils.chat_access import accessible_chat, mark_chat_inactive
 from bot.utils.permissions import (
     PERMISSION_MANAGE_ANNOUNCEMENTS,
     has_permission,
@@ -91,6 +93,12 @@ def _is_notification_owner(
 # Audience keyboard
 # ============================================================
 
+def _cancel_keyboard(owner_id):
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ إلغاء", callback_data=f"notify_cancel:{owner_id}")
+    ]])
+
+
 def _audience_keyboard(owner_id):
     return InlineKeyboardMarkup([
         [
@@ -140,6 +148,7 @@ def _audience_keyboard(owner_id):
 
 async def _get_chats(
     chat_type: str,
+    bot,
 ):
     try:
         if chat_type == "group":
@@ -174,7 +183,15 @@ async def _get_chats(
                 .execute()
             )
 
-        return response.data or []
+        available = {}
+        for row in response.data or []:
+            chat = await accessible_chat(bot, row.get("chat_id"), chat_type)
+            if chat is not None:
+                available[chat.id] = {
+                    "chat_id": chat.id, "chat_type": chat.type,
+                    "title": chat.title, "username": chat.username,
+                }
+        return list(available.values())
 
     except Exception as exc:
         print(
@@ -388,7 +405,8 @@ async def notification_audience(
         await query.answer()
 
         await query.edit_message_text(
-            "📝 أرسل عنوان التبليغ:"
+            "📝 أرسل عنوان التبليغ:",
+            reply_markup=_cancel_keyboard(user_id),
         )
 
         return NOTIFICATION_TITLE
@@ -410,14 +428,15 @@ async def notification_audience(
 
         await query.edit_message_text(
             "👤 مستخدم محدد\n\n"
-            "أرسل Telegram User ID للمستخدم:"
+            "أرسل Telegram User ID للمستخدم:",
+            reply_markup=_cancel_keyboard(user_id),
         )
 
         return NOTIFICATION_AUDIENCE
 
     if audience == "group":
         chats = await _get_chats(
-            "group"
+            "group", context.bot,
         )
 
         if not chats:
@@ -442,7 +461,7 @@ async def notification_audience(
 
     if audience == "channel":
         chats = await _get_chats(
-            "channel"
+            "channel", context.bot,
         )
 
         if not chats:
@@ -489,6 +508,9 @@ async def notification_user_id(
     if not await _has_notification_permission(
         user_id
     ):
+        if _is_notification_owner(user_id, context):
+            _clear_notification(context)
+        await message.reply_text("⛔ لم تعد لديك صلاحية إنشاء التبليغ.")
         return ConversationHandler.END
 
     if not _is_notification_owner(
@@ -512,11 +534,14 @@ async def notification_user_id(
         target_user_id = int(
             raw_user_id
         )
+        if target_user_id <= 0:
+            raise ValueError
 
     except ValueError:
         await message.reply_text(
             "❌ Telegram User ID غير صالح.\n\n"
-            "أرسل الرقم فقط."
+            "أرسل الرقم فقط.",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_AUDIENCE
 
@@ -533,7 +558,8 @@ async def notification_user_id(
     ] = notification
 
     await message.reply_text(
-        "📝 أرسل عنوان التبليغ:"
+        "📝 أرسل عنوان التبليغ:",
+        reply_markup=_cancel_keyboard(user_id),
     )
 
     return NOTIFICATION_TITLE
@@ -604,7 +630,9 @@ async def notification_chat(
         return NOTIFICATION_AUDIENCE
 
     try:
-        int(audience_value)
+        target_id = int(audience_value)
+        if target_id >= 0:
+            raise ValueError
 
     except ValueError:
         await query.answer(
@@ -612,6 +640,19 @@ async def notification_chat(
             show_alert=True,
         )
         return NOTIFICATION_AUDIENCE
+
+    try:
+        rows = supabase.table("bot_chats").select("chat_id").eq(
+            "chat_id", target_id
+        ).eq("is_active", True).execute().data or []
+        target = await accessible_chat(context.bot, target_id, audience_type) if rows else None
+    except Exception as exc:
+        print("NOTIFICATION DESTINATION ERROR:", type(exc).__name__)
+        target = None
+    if target is None:
+        await query.answer("❌ هذه المحادثة غير متاحة للتبليغات.", show_alert=True)
+        return NOTIFICATION_AUDIENCE
+    audience_value = str(target.id)
 
     notification = _get_notification(
         context
@@ -635,7 +676,8 @@ async def notification_chat(
     await query.answer()
 
     await query.edit_message_text(
-        "📝 أرسل عنوان التبليغ:"
+        "📝 أرسل عنوان التبليغ:",
+        reply_markup=_cancel_keyboard(user_id),
     )
 
     return NOTIFICATION_TITLE
@@ -662,6 +704,9 @@ async def notification_title(
     if not await _has_notification_permission(
         user_id
     ):
+        if _is_notification_owner(user_id, context):
+            _clear_notification(context)
+        await message.reply_text("⛔ لم تعد لديك صلاحية إنشاء التبليغ.")
         return ConversationHandler.END
 
     if not _is_notification_owner(
@@ -677,14 +722,16 @@ async def notification_title(
     if not title:
         await message.reply_text(
             "❌ العنوان لا يمكن أن يكون فارغاً.\n\n"
-            "أرسل عنوان التبليغ:"
+            "أرسل عنوان التبليغ:",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_TITLE
 
     if len(title) > 200:
         await message.reply_text(
             "❌ العنوان طويل جداً.\n\n"
-            "الحد الأقصى 200 حرف."
+            "الحد الأقصى 200 حرف.",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_TITLE
 
@@ -705,7 +752,8 @@ async def notification_title(
 
     await message.reply_text(
         "📝 أرسل محتوى التبليغ:\n\n"
-        "الحد الأقصى 3800 حرف."
+        "الحد الأقصى 3800 حرف.",
+        reply_markup=_cancel_keyboard(user_id),
     )
 
     return NOTIFICATION_CONTENT
@@ -732,6 +780,9 @@ async def notification_content(
     if not await _has_notification_permission(
         user_id
     ):
+        if _is_notification_owner(user_id, context):
+            _clear_notification(context)
+        await message.reply_text("⛔ لم تعد لديك صلاحية إنشاء التبليغ.")
         return ConversationHandler.END
 
     if not _is_notification_owner(
@@ -747,14 +798,16 @@ async def notification_content(
     if not content:
         await message.reply_text(
             "❌ محتوى التبليغ لا يمكن أن يكون فارغاً.\n\n"
-            "أرسل المحتوى:"
+            "أرسل المحتوى:",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_CONTENT
 
     if len(content) > 3800:
         await message.reply_text(
             "❌ المحتوى طويل جداً.\n\n"
-            "الحد الأقصى 3800 حرف."
+            "الحد الأقصى 3800 حرف.",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_CONTENT
 
@@ -778,7 +831,8 @@ async def notification_content(
     if len(final_text) > 4096:
         await message.reply_text(
             "❌ التبليغ يتجاوز الحد المسموح به في Telegram.\n\n"
-            "اختصر العنوان أو المحتوى."
+            "اختصر العنوان أو المحتوى.",
+            reply_markup=_cancel_keyboard(user_id),
         )
         return NOTIFICATION_CONTENT
 
@@ -1155,9 +1209,10 @@ async def _get_recipients(
             return []
 
         try:
-            return [
-                int(audience_value)
-            ]
+            target = int(audience_value)
+            if (audience_type == "user" and target <= 0) or (audience_type != "user" and target >= 0):
+                return []
+            return [target]
 
         except (
             TypeError,
@@ -1238,6 +1293,13 @@ async def _send_notification(
     for chat_id in recipients:
         sent = False
 
+        if audience_type in {"group", "channel"}:
+            destination = await accessible_chat(bot, chat_id, audience_type)
+            if destination is None:
+                failed += 1
+                continue
+            chat_id = destination.id
+
         for attempt in range(2):
             try:
                 await bot.send_message(
@@ -1260,11 +1322,32 @@ async def _send_notification(
 
                 break
 
-            except (
-                Forbidden,
-                BadRequest,
-                TelegramError,
-            ):
+            except ChatMigrated as exc:
+                if audience_type not in {"group", "channel"}:
+                    break
+                mark_chat_inactive(chat_id)
+                destination = await accessible_chat(bot, exc.new_chat_id, audience_type, migrated=True)
+                if destination is None:
+                    break
+                chat_id = destination.id
+                continue
+
+            except Forbidden:
+                if audience_type in {"group", "channel"}:
+                    mark_chat_inactive(chat_id)
+                break
+
+            except BadRequest as exc:
+                if audience_type in {"group", "channel"} and any(
+                    reason in str(exc).lower() for reason in (
+                        "chat not found", "group chat was deleted", "bot was kicked",
+                        "bot is not a member", "channel_private",
+                    )
+                ):
+                    mark_chat_inactive(chat_id)
+                break
+
+            except TelegramError:
                 break
 
             except Exception as exc:
@@ -1354,10 +1437,6 @@ def notification_conversation_handler():
                     notification_chat,
                     pattern=r"^notify_chat:",
                 ),
-                CallbackQueryHandler(
-                    notification_cancel,
-                    pattern=r"^notify_cancel:",
-                ),
                 MessageHandler(
                     filters.TEXT
                     & ~filters.COMMAND,
@@ -1370,20 +1449,12 @@ def notification_conversation_handler():
                     & ~filters.COMMAND,
                     notification_title,
                 ),
-                CallbackQueryHandler(
-                    notification_cancel,
-                    pattern=r"^notify_cancel:",
-                ),
             ],
             NOTIFICATION_CONTENT: [
                 MessageHandler(
                     filters.TEXT
                     & ~filters.COMMAND,
                     notification_content,
-                ),
-                CallbackQueryHandler(
-                    notification_cancel,
-                    pattern=r"^notify_cancel:",
                 ),
             ],
             NOTIFICATION_CONFIRM: [
@@ -1392,10 +1463,6 @@ def notification_conversation_handler():
                     pattern=(
                         r"^notify_confirm:"
                     ),
-                ),
-                CallbackQueryHandler(
-                    notification_cancel,
-                    pattern=r"^notify_cancel:",
                 ),
             ],
         },
@@ -1430,15 +1497,6 @@ async def notification_cancel(
 
     user_id = query.from_user.id
 
-    if not await _has_notification_permission(
-        user_id
-    ):
-        await query.answer(
-            "⛔ ليس لديك صلاحية.",
-            show_alert=True,
-        )
-        return ConversationHandler.END
-
     if not _is_notification_owner(
         user_id,
         context,
@@ -1447,14 +1505,23 @@ async def notification_cancel(
             "⛔ هذا التبليغ مو إلك.",
             show_alert=True,
         )
-        return ConversationHandler.END
+        return None
 
-    await query.answer()
+    if query.data.split(":") != ["notify_cancel", str(user_id)]:
+        return None
+
+    try:
+        allowed = await _has_notification_permission(user_id)
+    except Exception as exc:
+        print("NOTIFICATION CANCEL PERMISSION ERROR:", type(exc).__name__)
+        allowed = False
 
     _clear_notification(context)
 
+    await query.answer()
+
     await query.edit_message_text(
-        "❌ تم إلغاء التبليغ."
+        "❌ تم إلغاء التبليغ." if allowed else "❌ تم إلغاء التبليغ. لم تعد لديك صلاحية الإرسال."
     )
 
     return ConversationHandler.END

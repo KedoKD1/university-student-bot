@@ -113,6 +113,7 @@ class Query:
 
     def upsert(self, payload, **kwargs):
         self.action, self.payload = "upsert", payload
+        self.conflict = kwargs.get("on_conflict")
         return self
 
     def execute(self):
@@ -122,8 +123,16 @@ class Query:
         matched = [row for row in rows if all(test(row) for test in self.filters)]
         if self.action in ("insert", "upsert"):
             row = copy.deepcopy(self.payload)
-            row.setdefault("id", max([r.get("id", 0) for r in rows] + [0]) + 1)
-            rows.append(row)
+            conflict = getattr(self, "conflict", None)
+            existing = next((r for r in rows if conflict and all(
+                str(r.get(key)) == str(row.get(key)) for key in conflict.split(",")
+            )), None)
+            if self.action == "upsert" and existing is not None:
+                existing.update(row)
+                row = existing
+            else:
+                row.setdefault("id", max([r.get("id", 0) for r in rows] + [0]) + 1)
+                rows.append(row)
             matched = [row]
         elif self.action == "update":
             for row in matched:
@@ -143,7 +152,7 @@ def context(data=None):
         send_message=AsyncMock(), edit_message_text=AsyncMock(),
         answer_callback_query=AsyncMock(),
     )
-    return SimpleNamespace(user_data={}, admin_data=data if data is not None else {}, bot=bot)
+    return SimpleNamespace(user_data={}, admin_data=data if data is not None else {}, bot_data={}, bot=bot)
 
 
 def update(user_id, ctx, *, text=None, data=None, chat_id=700, message_id=1, **attachments):
