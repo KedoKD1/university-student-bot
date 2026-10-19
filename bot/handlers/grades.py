@@ -13,7 +13,7 @@ from bot.database.client import supabase
 # ============================================================
 
 def owner_error():
-    return "⛔ هذا الاختيار مو إلك."
+    return "⛔ هذا الاختيار ليس لك."
 
 
 def invalid_selection():
@@ -95,7 +95,7 @@ def grades_files_keyboard(files, stage_id, user_id):
 
     keyboard.append([
         InlineKeyboardButton(
-            text="🔙 رجوع للمراحل",
+            text="⬅️ رجوع إلى المراحل",
             callback_data=(
                 f"main:grades_back:{user_id}"
             ),
@@ -111,7 +111,7 @@ def grades_empty_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="🔙 رجوع للمراحل",
+                text="⬅️ رجوع إلى المراحل",
                 callback_data=(
                     f"main:grades_back:{user_id}"
                 ),
@@ -157,7 +157,7 @@ async def show_grades(
         )
 
         await query.edit_message_text(
-            "❌ تعذر تحميل المراحل حالياً.",
+            "❌ تعذر تحميل المراحل حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 main_button(user_id)
             ]),
@@ -167,7 +167,7 @@ async def show_grades(
     if not stages:
         await query.edit_message_text(
             "📝 الدرجات\n\n"
-            "❌ لا توجد مراحل دراسية حالياً.",
+            "❌ لا توجد مراحل دراسية حاليًا.",
             reply_markup=grades_empty_keyboard(user_id),
         )
         return
@@ -225,7 +225,7 @@ async def show_grade_files(
 
         if not stage.get("is_active", False):
             await query.answer(
-                "🔒 هذه المرحلة غير متاحة حالياً.",
+                "🔒 هذه المرحلة غير متاحة حاليًا.",
                 show_alert=True,
             )
             return
@@ -267,7 +267,7 @@ async def show_grade_files(
             "📝 الدرجات\n\n"
             f"📚 المرحلة {stage['stage_number']}\n\n"
             "❌ لا توجد ملفات درجات متوفرة "
-            "لهذه المرحلة حالياً.",
+            "لهذه المرحلة حاليًا.",
             reply_markup=grades_empty_keyboard(
                 user_id
             ),
@@ -337,7 +337,7 @@ async def send_grade_file(
 
     if not rows:
         await query.answer(
-            "❌ الملف غير متوفر حالياً.",
+            "❌ الملف غير متوفر حاليًا.",
             show_alert=True,
         )
         return
@@ -350,7 +350,7 @@ async def send_grade_file(
 
     if not telegram_file_id:
         await query.answer(
-            "❌ الملف لا يحتوي على ملف تيليجرام.",
+            "❌ هذا الملف غير متاح حاليًا. يمكنك المحاولة لاحقًا.",
             show_alert=True,
         )
         return
@@ -544,7 +544,7 @@ async def grades_locked(
         return
 
     await query.answer(
-        "🔒 هذه المرحلة غير متاحة حالياً.",
+        "🔒 هذه المرحلة غير متاحة حاليًا.",
         show_alert=True,
     )
 
@@ -730,6 +730,6 @@ async def grades_callback(
         return
 
     await query.answer(
-        "❌ اختيار غير معروف.",
+        "❌ اختيار غير صالح.",
         show_alert=True,
     )

@@ -3,8 +3,7 @@ from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 
-from bot.keyboards.subjects import subjects_keyboard
-from bot.keyboards.stages import stages_keyboard
+from bot.keyboards.subjects import PAGE_SIZE, back_stages_keyboard, subjects_keyboard
 from bot.keyboards.content import content_keyboard
 
 
@@ -35,22 +34,38 @@ async def show_subjects(
 
     user_id = query.from_user.id
 
-    subjects = await _get_active_subjects(
-        stage_id
-    )
-
     await query.answer()
 
-    if not subjects:
+    try:
+        stages = supabase.table("stages").select("stage_number, is_active").eq(
+            "id", stage_id
+        ).limit(1).execute().data or []
+        if not stages or not stages[0].get("is_active"):
+            await query.edit_message_text(
+                "❌ هذه المرحلة غير متاحة حاليًا. اختر مرحلة أخرى.",
+                reply_markup=back_stages_keyboard(user_id),
+            )
+            return
+        subjects = await _get_active_subjects(stage_id)
+    except Exception as exc:
+        print("STUDENT SUBJECTS ERROR:", type(exc).__name__)
         await query.edit_message_text(
-            "📚 مواد المرحلة\n\n"
-            "لا توجد مواد مضافة لهذه المرحلة حالياً."
+            "❌ تعذر تحميل المواد حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=back_stages_keyboard(user_id),
         )
         return
 
+    total_pages = max(1, (len(subjects) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    text = f"📘 مواد المرحلة {stages[0]['stage_number']}\n\n"
+    text += "اختر المادة لعرض محتواها." if subjects else (
+        "لا توجد مواد متاحة لهذه المرحلة حاليًا. يمكنك الرجوع واختيار مرحلة أخرى."
+    )
+    if total_pages > 1:
+        text += f"\n\n📄 الصفحة {page + 1} من {total_pages}"
+
     await query.edit_message_text(
-        "📚 مواد المرحلة\n\n"
-        "اختر المادة:",
+        text,
         reply_markup=subjects_keyboard(
             subjects,
             user_id,
@@ -84,8 +99,8 @@ async def subjects_page_button(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
@@ -133,49 +148,59 @@ async def subject_button(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
 
     await query.answer()
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("*")
-        .eq("id", subject_id)
-        .eq("is_active", True)
-        .single()
-        .execute()
-    )
-
-    subject = response.data
-
-    if not subject:
+    try:
+        response = (
+            supabase
+            .table("subjects")
+            .select("*")
+            .eq("id", subject_id)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        subjects = response.data or []
+    except Exception as exc:
+        print("STUDENT SUBJECT ERROR:", type(exc).__name__)
         await query.edit_message_text(
-            "❌ تعذر العثور على هذه المادة."
+            "❌ تعذر تحميل المادة حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
+    if not subjects:
+        await query.edit_message_text(
+            "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
+        )
+        return
+
+    subject = subjects[0]
     description = (
         subject.get("description")
-        or "لا يوجد وصف للمادة حالياً."
+        or "لا يوجد وصف للمادة حاليًا."
     )
 
     stage_id = subject.get("stage_id")
 
     if stage_id is None:
         await query.edit_message_text(
-            "❌ تعذر تحديد المرحلة الخاصة بهذه المادة."
+            "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
     await query.edit_message_text(
-        f"📘 {subject['name']}\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
         f"{description}\n\n"
-        "اختر القسم:",
+        "اختر نوع المحتوى:",
         reply_markup=content_keyboard(
             subject_id,
             query.from_user.id,
@@ -207,7 +232,7 @@ async def back_to_subjects(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return
@@ -242,25 +267,12 @@ async def back_to_stages(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return
 
-    response = (
-        supabase
-        .table("stages")
-        .select("*")
-        .order("stage_number")
-        .execute()
-    )
-
     await query.answer()
 
-    await query.edit_message_text(
-        "🎓 اختر المرحلة الدراسية:",
-        reply_markup=stages_keyboard(
-            response.data or [],
-            query.from_user.id,
-        ),
-    )
+    from bot.handlers.stages import show_stages
+    await show_stages(update, context, edit_message=True)

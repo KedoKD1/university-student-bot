@@ -122,6 +122,14 @@ async def start_search(
     if query is None or query.from_user is None:
         return
 
+    parts = (query.data or "").split(":")
+    if len(parts) != 3 or parts[:2] != ["main", "search"]:
+        await query.answer("❌ اختيار غير صالح.", show_alert=True)
+        return
+    if parts[2] != str(query.from_user.id):
+        await query.answer("⛔ هذا الاختيار ليس لك.", show_alert=True)
+        return
+
     user_id = query.from_user.id
 
     context.user_data["search_mode"] = True
@@ -137,7 +145,10 @@ async def start_search(
         "• Anatomy\n"
         "• Cell\n"
         "• Lecture 1\n\n"
-        "للخروج من البحث استخدم /start."
+        "يمكنك إلغاء البحث والعودة إلى القائمة الرئيسية.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ إلغاء", callback_data=f"back_main:{user_id}")
+        ]]),
     )
 
     await query.message.reply_text(
@@ -391,8 +402,8 @@ async def handle_search_text(
     if not results:
         await update.message.reply_text(
             f"🔎 نتائج البحث عن: {text}\n\n"
-            "❌ ما لكيت أي نتيجة مطابقة.\n\n"
-            "جرب كلمة ثانية أو اسم المادة بشكل مختلف.",
+            "لا توجد نتائج مطابقة حاليًا.\n\n"
+            "جرّب كلمة أخرى أو اسم المادة بصيغة مختلفة.",
             reply_markup=search_keyboard(user_id),
         )
         return True

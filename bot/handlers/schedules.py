@@ -31,7 +31,7 @@ def schedule_stages_keyboard(stages, user_id):
         ])
     keyboard.append([
         InlineKeyboardButton(
-            text="⬅️ القائمة الرئيسية",
+            text="🏠 القائمة الرئيسية",
             callback_data=f"back_main:{user_id}",
         )
     ])
@@ -40,7 +40,7 @@ def schedule_back_keyboard(user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                text="⬅️ رجوع للمراحل",
+                text="⬅️ رجوع إلى المراحل",
                 callback_data=(
                     f"main:schedule:{user_id}"
                 ),
@@ -75,13 +75,13 @@ async def show_schedules(
         user_id = int(parts[2])
     except ValueError:
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذه القائمة ليست لك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return
@@ -104,7 +104,7 @@ async def show_schedules(
             exc,
         )
         await query.edit_message_text(
-            "❌ تعذر تحميل المراحل حالياً.",
+            "❌ تعذر تحميل المراحل حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -120,7 +120,7 @@ async def show_schedules(
     if not stages:
         await query.edit_message_text(
             "📅 الجداول الدراسية\n\n"
-            "❌ لا توجد مراحل دراسية حالياً.",
+            "❌ لا توجد مراحل دراسية حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -164,13 +164,13 @@ async def student_schedule_stage(
         user_id = int(parts[2])
     except ValueError:
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return
@@ -243,7 +243,7 @@ async def student_schedule_stage(
         await query.edit_message_text(
             f"📅 جدول المرحلة "
             f"{stage['stage_number']}\n\n"
-            "❌ تعذر تحميل الجدول حالياً.",
+            "❌ تعذر تحميل الجدول حاليًا.",
             reply_markup=schedule_back_keyboard(
                 user_id
             ),
@@ -268,7 +268,7 @@ async def student_schedule_stage(
         await query.edit_message_text(
             f"📅 جدول المرحلة "
             f"{stage['stage_number']}\n\n"
-            "❌ ملف الجدول غير متوفر حالياً.",
+            "❌ ملف الجدول غير متوفر حاليًا.",
             reply_markup=schedule_back_keyboard(
                 user_id
             ),
@@ -328,13 +328,13 @@ async def locked_schedule(
         user_id = int(parts[2])
     except ValueError:
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
     if query.from_user.id != user_id:
         await query.answer(
-            "⛔ هذا الزر ليس لك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return

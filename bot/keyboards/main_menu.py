@@ -28,7 +28,7 @@ def main_menu_keyboard(user_id):
         ],
         [
             InlineKeyboardButton(
-                text="📅 الجداول",
+                text="📅 الجداول الدراسية",
                 callback_data=(
                     f"main:schedule:{user_id}"
                 ),
@@ -46,9 +46,7 @@ def main_menu_keyboard(user_id):
                 callback_data=(
                     f"main:grades:{user_id}"
                 ),
-            )
-        ],
-        [
+            ),
             InlineKeyboardButton(
                 text="⚙️ الإعدادات",
                 callback_data=(

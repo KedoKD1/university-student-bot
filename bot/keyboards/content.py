@@ -23,10 +23,11 @@ def content_keyboard(subject_id, user_id, stage_id):
         ],
         [
             InlineKeyboardButton(
-                "⬅️ رجوع للمواد",
+                "⬅️ رجوع إلى المواد",
                 callback_data=f"back_subjects:{stage_id}:{user_id}",
             )
         ],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=f"back_main:{user_id}")],
     ])
 
 
@@ -46,16 +47,17 @@ def files_section_keyboard(subject_id, user_id):
         ],
         [
             InlineKeyboardButton(
-                "📚 جميع الملفات",
+                "📄 جميع الملفات",
                 callback_data=f"content:files:all:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                "⬅️ رجوع للمادة",
+                "⬅️ رجوع إلى المادة",
                 callback_data=f"back_content:{subject_id}:{user_id}",
             )
         ],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=f"back_main:{user_id}")],
     ])
 
 
@@ -75,16 +77,17 @@ def summaries_section_keyboard(subject_id, user_id):
         ],
         [
             InlineKeyboardButton(
-                "📚 جميع الملخصات",
+                "📝 جميع الملخصات",
                 callback_data=f"content:summaries:all:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                "⬅️ رجوع للمادة",
+                "⬅️ رجوع إلى المادة",
                 callback_data=f"back_content:{subject_id}:{user_id}",
             )
         ],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=f"back_main:{user_id}")],
     ])
 
 
@@ -92,14 +95,15 @@ def drawings_section_keyboard(subject_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "📚 جميع الرسومات",
+                "🎨 جميع الرسومات",
                 callback_data=f"content:drawings:all:{subject_id}:{user_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                "⬅️ رجوع للمادة",
+                "⬅️ رجوع إلى المادة",
                 callback_data=f"back_content:{subject_id}:{user_id}",
             )
         ],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=f"back_main:{user_id}")],
     ])

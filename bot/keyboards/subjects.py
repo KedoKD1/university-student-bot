@@ -4,6 +4,17 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 PAGE_SIZE = 6
 
 
+def back_stages_keyboard(user_id):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "⬅️ رجوع إلى المراحل", callback_data=f"back_stages:{user_id}"
+        )],
+        [InlineKeyboardButton(
+            "🏠 القائمة الرئيسية", callback_data=f"back_main:{user_id}"
+        )],
+    ])
+
+
 def subjects_keyboard(
     subjects,
     user_id,
@@ -64,19 +75,6 @@ def subjects_keyboard(
     if navigation:
         keyboard.append(navigation)
 
-    if total_pages > 1:
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"📄 {page + 1} / {total_pages}",
-                callback_data="noop",
-            )
-        ])
-
-    keyboard.append([
-        InlineKeyboardButton(
-            text="⬅️ رجوع للمراحل",
-            callback_data=f"back_stages:{user_id}",
-        )
-    ])
+    keyboard.extend(back_stages_keyboard(user_id).inline_keyboard)
 
     return InlineKeyboardMarkup(keyboard)

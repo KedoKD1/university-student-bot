@@ -54,7 +54,7 @@ def format_time(time_value):
 
 
 def owner_error():
-    return "⛔ هذا الزر ليس لك."
+    return "⛔ هذا الاختيار ليس لك."
 
 
 def invalid_selection():
@@ -150,7 +150,7 @@ def exam_types_keyboard(stage_id, user_id):
         ],
         [
             InlineKeyboardButton(
-                "🔙 رجوع للمراحل",
+                "⬅️ رجوع إلى المراحل",
                 callback_data=f"exam_back:{user_id}",
             )
         ],
@@ -167,7 +167,7 @@ def exam_results_keyboard(stage_id, user_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "🔙 رجوع لأنواع الامتحانات",
+                "⬅️ رجوع إلى أنواع الامتحانات",
                 callback_data=(
                     f"exam_stage:"
                     f"{stage_id}:"
@@ -219,7 +219,7 @@ async def show_exam_dates(
         user_id = int(parts[2])
     except (TypeError, ValueError):
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
@@ -254,7 +254,7 @@ async def show_exam_dates(
         )
 
         await query.edit_message_text(
-            "❌ تعذر تحميل المراحل حالياً.",
+            "❌ تعذر تحميل المراحل حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -271,7 +271,7 @@ async def show_exam_dates(
     if not stages:
         await query.edit_message_text(
             "📋 مواعيد الامتحانات\n\n"
-            "❌ لا توجد مراحل دراسية حالياً.",
+            "❌ لا توجد مراحل دراسية حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -379,7 +379,7 @@ async def exam_stage(
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        "🔙 رجوع للمراحل",
+                        "⬅️ رجوع إلى المراحل",
                         callback_data=(
                             f"exam_back:{user_id}"
                         ),
@@ -401,7 +401,7 @@ async def exam_stage(
 
     if not stage.get("is_active", False):
         await query.answer(
-            "🔒 هذه المرحلة غير متاحة حالياً.",
+            "🔒 هذه المرحلة غير متاحة حاليًا.",
             show_alert=True,
         )
         return
@@ -495,7 +495,7 @@ async def exam_type(
                 reply_markup=InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton(
-                            "🔙 رجوع للمراحل",
+                            "⬅️ رجوع إلى المراحل",
                             callback_data=(
                                 f"exam_back:{user_id}"
                             ),
@@ -517,7 +517,7 @@ async def exam_type(
 
         if not stage.get("is_active", False):
             await query.answer(
-                "🔒 هذه المرحلة غير متاحة حالياً.",
+                "🔒 هذه المرحلة غير متاحة حاليًا.",
                 show_alert=True,
             )
             return
@@ -572,7 +572,7 @@ async def exam_type(
         await query.edit_message_text(
             f"📋 مواعيد امتحانات المرحلة "
             f"{stage_number}\n\n"
-            "❌ لا توجد مواعيد مسجلة لهذا النوع حالياً.",
+            "❌ لا توجد مواعيد مسجلة لهذا النوع حاليًا.",
             reply_markup=exam_results_keyboard(
                 stage_id,
                 user_id,
@@ -677,7 +677,7 @@ async def exam_locked(
         return
 
     await query.answer(
-        "🔒 هذه المرحلة غير متاحة حالياً.",
+        "🔒 هذه المرحلة غير متاحة حاليًا.",
         show_alert=True,
     )
 
@@ -749,7 +749,7 @@ async def exam_back(
         )
 
         await query.edit_message_text(
-            "❌ تعذر تحميل المراحل حالياً.",
+            "❌ تعذر تحميل المراحل حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
@@ -766,7 +766,7 @@ async def exam_back(
     if not stages:
         await query.edit_message_text(
             "📋 مواعيد الامتحانات\n\n"
-            "❌ لا توجد مراحل دراسية حالياً.",
+            "❌ لا توجد مراحل دراسية حاليًا.",
             reply_markup=InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
