@@ -21,8 +21,9 @@ from bot.handlers.student_settings import (
 def main_menu_text():
     return (
         "🏠 القائمة الرئيسية\n\n"
-        "أهلاً بك في LabBase.\n"
-        "اختر القسم الذي تريد الوصول إليه:"
+        "أهلًا بك في LabBase، رفيقك الدراسي في تقنيات المختبرات الطبية.\n"
+        "موادك وملخصاتك ورسوماتك ومواعيدك الدراسية في مكان واحد.\n\n"
+        "ابدأ باختيار مرحلتك، أو اختر إحدى الخدمات التالية:"
     )
 
 
@@ -97,14 +98,14 @@ async def main_menu_button(
 
     except (TypeError, ValueError):
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
 
     if query.from_user.id != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return
@@ -250,14 +251,14 @@ async def back_main(
 
     except (TypeError, ValueError):
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
 
     if query.from_user.id != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.",
+            "⛔ هذا الاختيار ليس لك.",
             show_alert=True,
         )
         return

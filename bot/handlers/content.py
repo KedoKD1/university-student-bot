@@ -10,6 +10,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
+from bot.keyboards.subjects import back_stages_keyboard
 from bot.keyboards.content import (
     content_keyboard,
     files_section_keyboard,
@@ -44,8 +45,8 @@ def build_caption(icon, name, description=None):
 
 def owner_error():
     return (
-        "⛔ هذا الاختيار مو إلك.\n"
-        "استخدم /start حتى تحصل على قائمتك الخاصة."
+        "⛔ هذا الاختيار ليس لك.\n"
+        "استخدم /start لفتح قائمتك الخاصة."
     )
 
 
@@ -53,10 +54,11 @@ def back_content_keyboard(subject_id, owner_id):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "⬅️ رجوع للمادة",
+                "⬅️ رجوع إلى المادة",
                 callback_data=f"back_content:{subject_id}:{owner_id}",
             )
-        ]
+        ],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=f"back_main:{owner_id}")],
     ])
 
 
@@ -69,6 +71,39 @@ def back_section_keyboard(callback_data, text):
             )
         ]
     ])
+
+
+async def _content_heading(query, subject_id, title):
+    try:
+        rows = supabase.table("subjects").select("name, stage_id").eq(
+            "id", subject_id
+        ).eq("is_active", True).limit(1).execute().data or []
+    except Exception as exc:
+        print("STUDENT CONTENT SUBJECT ERROR:", type(exc).__name__)
+        await query.edit_message_text(
+            "❌ تعذر تحميل المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
+        )
+        return None
+    if not rows or rows[0].get("stage_id") is None:
+        await query.edit_message_text(
+            "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
+        )
+        return None
+    return f"{title}\n📘 المادة: {rows[0]['name']}"
+
+
+async def _read_content(query, builder, keyboard):
+    try:
+        return builder.execute().data or []
+    except Exception as exc:
+        print("STUDENT CONTENT READ ERROR:", type(exc).__name__)
+        await query.edit_message_text(
+            "❌ تعذر تحميل المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=keyboard,
+        )
+        return None
 
 
 async def send_content_item(
@@ -359,6 +394,12 @@ async def show_files(
 
     await query.answer()
 
+    heading = await _content_heading(
+        query, subject_id, "📄 جميع الملفات" if show_all else "📄 الملفات"
+    )
+    if heading is None:
+        return
+
     if show_all:
         response = (
             supabase
@@ -368,15 +409,18 @@ async def show_files(
             .eq("is_active", True)
             .is_("deleted_at", "null")
             .order("sort_order")
-            .execute()
         )
 
-        files = response.data or []
+        files = await _read_content(
+            query, response, back_content_keyboard(subject_id, owner_id)
+        )
+        if files is None:
+            return
 
         if not files:
             await query.edit_message_text(
-                "📚 جميع الملفات\n\n"
-                "⚠️ لا توجد ملفات مضافة لهذه المادة حاليًا.",
+                f"{heading}\n\n"
+                "لا توجد ملفات متاحة لهذه المادة حاليًا. يمكنك الرجوع واختيار نوع محتوى آخر.",
                 reply_markup=back_content_keyboard(
                     subject_id,
                     owner_id,
@@ -390,8 +434,8 @@ async def show_files(
         )
 
         await query.edit_message_text(
-            "📚 جميع الملفات\n\n"
-            "⏳ جاري إرسال الملفات النظرية والعملية..."
+            f"{heading}\n\n"
+            "⏳ جارٍ إرسال الملفات النظرية والعملية..."
         )
 
         if description:
@@ -415,7 +459,7 @@ async def show_files(
         )
 
         result_text = (
-            "📚 تم إرسال جميع الملفات.\n\n"
+            f"{heading}\n\n"
             f"✅ تم إرسال: {sent_count}"
         )
 
@@ -424,7 +468,7 @@ async def show_files(
                 f"\n⚠️ تعذر إرسال: {failed_count}"
             )
 
-        await query.message.reply_text(
+        await query.edit_message_text(
             result_text,
             reply_markup=back_content_keyboard(
                 subject_id,
@@ -435,7 +479,7 @@ async def show_files(
         return
 
     await query.edit_message_text(
-        "📄 الملفات\n\n"
+        f"{heading}\n\n"
         "اختر القسم:",
         reply_markup=files_section_keyboard(
             subject_id,
@@ -494,24 +538,31 @@ async def show_file_section(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
-        .execute()
     )
 
-    files = response.data or []
+    files = await _read_content(
+        query, response, back_section_keyboard(f"content:files:{subject_id}:{owner_id}", "⬅️ رجوع إلى الملفات")
+    )
+    if files is None:
+        return
 
     section_name = (
-        "📖 النظري"
+        "النظري"
         if section_type == "theoretical"
-        else "🧪 العملي"
+        else "العملي"
     )
+
+    heading = await _content_heading(query, subject_id, f"📄 الملفات — {section_name}")
+    if heading is None:
+        return
 
     if not files:
         await query.edit_message_text(
-            f"📄 الملفات — {section_name}\n\n"
-            "لا توجد ملفات مضافة لهذا القسم حاليًا.",
+            f"{heading}\n\n"
+            "لا توجد ملفات متاحة لهذا القسم حاليًا. يمكنك الرجوع واختيار قسم آخر.",
             reply_markup=back_section_keyboard(
                 f"content:files:{subject_id}:{owner_id}",
-                "⬅️ رجوع للملفات",
+                "⬅️ رجوع إلى الملفات",
             ),
         )
         return
@@ -532,7 +583,7 @@ async def show_file_section(
 
     keyboard.append([
         InlineKeyboardButton(
-            "⬅️ رجوع للملفات",
+            "⬅️ رجوع إلى الملفات",
             callback_data=(
                 f"content:files:"
                 f"{subject_id}:{owner_id}"
@@ -541,7 +592,7 @@ async def show_file_section(
     ])
 
     await query.edit_message_text(
-        f"📄 الملفات — {section_name}\n\n"
+        f"{heading}\n\n"
         "اختر الملف:",
         reply_markup=InlineKeyboardMarkup(
             keyboard
@@ -587,16 +638,26 @@ async def file_button(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .limit(1)
-        .execute()
     )
 
-    files = response.data or []
+    files = await _read_content(
+        query, response, back_stages_keyboard(query.from_user.id)
+    )
+    if files is None:
+        return
 
     if not files:
-        await query.message.reply_text(
-            "❌ الملف غير موجود."
+        await query.edit_message_text(
+            "❌ هذا الملف غير متاح حاليًا. يمكنك الرجوع واختيار ملف آخر.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
+
+    recovery_keyboard = (
+        back_content_keyboard(files[0]["subject_id"], owner_id)
+        if files[0].get("subject_id") is not None
+        else back_stages_keyboard(query.from_user.id)
+    )
 
     try:
         sent = await send_content_item(
@@ -607,8 +668,9 @@ async def file_button(
         )
 
         if not sent:
-            await query.message.reply_text(
-                "⚠️ هذا الملف غير مرتبط بملف Telegram."
+            await query.edit_message_text(
+                "❌ هذا الملف غير متاح حاليًا. يمكنك الرجوع واختيار ملف آخر.",
+                reply_markup=recovery_keyboard,
             )
 
     except Exception as exc:
@@ -618,8 +680,9 @@ async def file_button(
             exc,
         )
 
-        await query.message.reply_text(
-            "❌ حدث خطأ أثناء إرسال الملف."
+        await query.edit_message_text(
+            "❌ تعذر إرسال الملف حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=recovery_keyboard,
         )
 
 
@@ -655,8 +718,12 @@ async def show_summaries_or_drawings(
     if content_type == "summaries":
         await query.answer()
 
+        heading = await _content_heading(query, subject_id, "📝 الملخصات")
+        if heading is None:
+            return
+
         await query.edit_message_text(
-            "📝 الملخصات\n\n"
+            f"{heading}\n\n"
             "اختر القسم:",
             reply_markup=summaries_section_keyboard(
                 subject_id,
@@ -669,9 +736,13 @@ async def show_summaries_or_drawings(
     if content_type == "drawings":
         await query.answer()
 
+        heading = await _content_heading(query, subject_id, "🎨 الرسومات")
+        if heading is None:
+            return
+
         await query.edit_message_text(
-            "🎨 الرسومات\n\n"
-            "اختر العملية:",
+            f"{heading}\n\n"
+            "اختر عرض جميع الرسومات:",
             reply_markup=drawings_section_keyboard(
                 subject_id,
                 query.from_user.id,
@@ -736,24 +807,31 @@ async def show_summary_section(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
-        .execute()
     )
 
-    summaries = response.data or []
+    summaries = await _read_content(
+        query, response, back_section_keyboard(f"content:summaries:{subject_id}:{owner_id}", "⬅️ رجوع إلى الملخصات")
+    )
+    if summaries is None:
+        return
 
     section_name = (
-        "📖 النظري"
+        "النظري"
         if section_type == "theoretical"
-        else "🧪 العملي"
+        else "العملي"
     )
+
+    heading = await _content_heading(query, subject_id, f"📝 الملخصات — {section_name}")
+    if heading is None:
+        return
 
     if not summaries:
         await query.edit_message_text(
-            f"📝 الملخصات — {section_name}\n\n"
-            "لا توجد ملخصات مضافة لهذا القسم حاليًا.",
+            f"{heading}\n\n"
+            "لا توجد ملخصات متاحة لهذا القسم حاليًا. يمكنك الرجوع واختيار قسم آخر.",
             reply_markup=back_section_keyboard(
                 f"content:summaries:{subject_id}:{owner_id}",
-                "⬅️ رجوع للملخصات",
+                "⬅️ رجوع إلى الملخصات",
             ),
         )
         return
@@ -776,7 +854,7 @@ async def show_summary_section(
 
     keyboard.append([
         InlineKeyboardButton(
-            "⬅️ رجوع للملخصات",
+            "⬅️ رجوع إلى الملخصات",
             callback_data=(
                 f"content:summaries:"
                 f"{subject_id}:{owner_id}"
@@ -785,7 +863,7 @@ async def show_summary_section(
     ])
 
     await query.edit_message_text(
-        f"📝 الملخصات — {section_name}\n\n"
+        f"{heading}\n\n"
         "اختر الملخص:",
         reply_markup=InlineKeyboardMarkup(
             keyboard
@@ -828,6 +906,10 @@ async def show_all_summaries(
 
     await query.answer()
 
+    heading = await _content_heading(query, subject_id, "📝 جميع الملخصات")
+    if heading is None:
+        return
+
     response = (
         supabase
         .table("summaries")
@@ -836,15 +918,18 @@ async def show_all_summaries(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
-        .execute()
     )
 
-    summaries = response.data or []
+    summaries = await _read_content(
+        query, response, back_content_keyboard(subject_id, owner_id)
+    )
+    if summaries is None:
+        return
 
     if not summaries:
         await query.edit_message_text(
-            "📚 جميع الملخصات\n\n"
-            "⚠️ لا توجد ملخصات مضافة لهذه المادة حاليًا.",
+            f"{heading}\n\n"
+            "لا توجد ملخصات متاحة لهذه المادة حاليًا. يمكنك الرجوع واختيار نوع محتوى آخر.",
             reply_markup=back_content_keyboard(
                 subject_id,
                 owner_id,
@@ -858,8 +943,8 @@ async def show_all_summaries(
     )
 
     await query.edit_message_text(
-        "📚 جميع الملخصات\n\n"
-        "⏳ جاري إرسال الملخصات النظرية والعملية..."
+        f"{heading}\n\n"
+        "⏳ جارٍ إرسال الملخصات النظرية والعملية..."
     )
 
     if description:
@@ -883,7 +968,7 @@ async def show_all_summaries(
     )
 
     result_text = (
-        "📚 تم إرسال جميع الملخصات.\n\n"
+        f"{heading}\n\n"
         f"✅ تم إرسال: {sent_count}"
     )
 
@@ -892,7 +977,7 @@ async def show_all_summaries(
             f"\n⚠️ تعذر إرسال: {failed_count}"
         )
 
-    await query.message.reply_text(
+    await query.edit_message_text(
         result_text,
         reply_markup=back_content_keyboard(
             subject_id,
@@ -936,6 +1021,10 @@ async def show_all_drawings(
 
     await query.answer()
 
+    heading = await _content_heading(query, subject_id, "🎨 جميع الرسومات")
+    if heading is None:
+        return
+
     response = (
         supabase
         .table("drawings")
@@ -944,15 +1033,18 @@ async def show_all_drawings(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
-        .execute()
     )
 
-    drawings = response.data or []
+    drawings = await _read_content(
+        query, response, back_content_keyboard(subject_id, owner_id)
+    )
+    if drawings is None:
+        return
 
     if not drawings:
         await query.edit_message_text(
-            "🎨 جميع الرسومات\n\n"
-            "⚠️ لا توجد رسومات مضافة لهذه المادة حاليًا.",
+            f"{heading}\n\n"
+            "لا توجد رسومات متاحة لهذه المادة حاليًا. يمكنك الرجوع واختيار نوع محتوى آخر.",
             reply_markup=back_content_keyboard(
                 subject_id,
                 owner_id,
@@ -961,8 +1053,8 @@ async def show_all_drawings(
         return
 
     await query.edit_message_text(
-        "🎨 جميع الرسومات\n\n"
-        "⏳ جاري إرسال جميع الرسومات..."
+        f"{heading}\n\n"
+        "⏳ جارٍ إرسال الرسومات..."
     )
 
     sent_count, failed_count = (
@@ -974,7 +1066,7 @@ async def show_all_drawings(
     )
 
     result_text = (
-        "🎨 تم إرسال جميع الرسومات.\n\n"
+        f"{heading}\n\n"
         f"✅ تم إرسال: {sent_count}"
     )
 
@@ -983,7 +1075,7 @@ async def show_all_drawings(
             f"\n⚠️ تعذر إرسال: {failed_count}"
         )
 
-    await query.message.reply_text(
+    await query.edit_message_text(
         result_text,
         reply_markup=back_content_keyboard(
             subject_id,
@@ -1064,7 +1156,7 @@ async def show_drawings(
 
     keyboard.append([
         InlineKeyboardButton(
-            "📚 إرسال جميع الرسومات",
+            "🎨 إرسال جميع الرسومات",
             callback_data=(
                 f"content:drawings:all:"
                 f"{subject_id}:{owner_id}"
@@ -1074,7 +1166,7 @@ async def show_drawings(
 
     keyboard.append([
         InlineKeyboardButton(
-            "⬅️ رجوع للمادة",
+            "⬅️ رجوع إلى المادة",
             callback_data=(
                 f"back_content:"
                 f"{subject_id}:{owner_id}"
@@ -1147,14 +1239,18 @@ async def study_item_button(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .limit(1)
-        .execute()
     )
 
-    items = response.data or []
+    items = await _read_content(
+        query, response, back_content_keyboard(subject_id, owner_id)
+    )
+    if items is None:
+        return
 
     if not items:
-        await query.message.reply_text(
-            "❌ المحتوى غير موجود."
+        await query.edit_message_text(
+            "❌ هذا المحتوى غير متاح حاليًا. يمكنك الرجوع واختيار محتوى آخر.",
+            reply_markup=back_content_keyboard(subject_id, owner_id),
         )
         return
 
@@ -1167,8 +1263,9 @@ async def study_item_button(
         )
 
         if not sent:
-            await query.message.reply_text(
-                "⚠️ هذا المحتوى غير مرتبط بملف Telegram."
+            await query.edit_message_text(
+                "❌ هذا المحتوى غير متاح حاليًا. يمكنك الرجوع واختيار محتوى آخر.",
+                reply_markup=back_content_keyboard(subject_id, owner_id),
             )
 
     except Exception as exc:
@@ -1178,8 +1275,9 @@ async def study_item_button(
             exc,
         )
 
-        await query.message.reply_text(
-            "❌ حدث خطأ أثناء إرسال المحتوى."
+        await query.edit_message_text(
+            "❌ تعذر إرسال المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=back_content_keyboard(subject_id, owner_id),
         )
 
 
@@ -1211,22 +1309,31 @@ async def back_to_content(
         )
         return
 
-    response = (
-        supabase
-        .table("subjects")
-        .select("*")
-        .eq("id", subject_id)
-        .eq("is_active", True)
-        .limit(1)
-        .execute()
-    )
+    await query.answer()
 
-    subjects = response.data or []
+    try:
+        response = (
+            supabase
+            .table("subjects")
+            .select("*")
+            .eq("id", subject_id)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        subjects = response.data or []
+    except Exception as exc:
+        print("STUDENT CONTENT BACK ERROR:", type(exc).__name__)
+        await query.edit_message_text(
+            "❌ تعذر تحميل المادة حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
+        )
+        return
 
     if not subjects:
-        await query.answer(
-            "❌ المادة غير موجودة.",
-            show_alert=True,
+        await query.edit_message_text(
+            "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
@@ -1234,13 +1341,11 @@ async def back_to_content(
     stage_id = subject.get("stage_id")
 
     if stage_id is None:
-        await query.answer(
-            "❌ تعذر تحديد المرحلة الخاصة بالمادة.",
-            show_alert=True,
+        await query.edit_message_text(
+            "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
+            reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
-
-    await query.answer()
 
     description = (
         subject.get("description")
@@ -1248,9 +1353,9 @@ async def back_to_content(
     )
 
     await query.edit_message_text(
-        f"📘 {subject['name']}\n\n"
+        f"📘 المادة: {subject['name']}\n\n"
         f"{description}\n\n"
-        "اختر القسم:",
+        "اختر نوع المحتوى:",
         reply_markup=content_keyboard(
             subject_id,
             query.from_user.id,

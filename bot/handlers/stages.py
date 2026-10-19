@@ -1,24 +1,14 @@
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
 from bot.keyboards.stages import stages_keyboard
+from bot.keyboards.subjects import back_stages_keyboard
 from bot.handlers.subjects import show_subjects
 
 
 def stages_back_keyboard(user_id):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "⬅️ رجوع",
-                callback_data=f"back_main:{user_id}",
-            )
-        ]
-    ])
+    return back_stages_keyboard(user_id)
 
 
 async def show_stages(
@@ -33,20 +23,23 @@ async def show_stages(
 
     user_id = user.id
 
-    response = (
-        supabase
-        .table("stages")
-        .select("*")
-        .order("stage_number")
-        .execute()
-    )
-
-    stages = response.data or []
-
-    text = (
-        "🎓 المراحل الدراسية\n\n"
-        "اختر المرحلة الدراسية:"
-    )
+    try:
+        response = (
+            supabase
+            .table("stages")
+            .select("*")
+            .order("stage_number")
+            .execute()
+        )
+        stages = response.data or []
+        text = "📚 المراحل الدراسية\n\n" + (
+            "اختر مرحلتك لعرض المواد والمحتوى الدراسي."
+            if stages else "لا توجد مراحل دراسية متاحة حاليًا. يمكنك المحاولة لاحقًا."
+        )
+    except Exception as exc:
+        print("STUDENT STAGES ERROR:", type(exc).__name__)
+        stages = []
+        text = "❌ تعذر تحميل المراحل حاليًا. يمكنك العودة والمحاولة لاحقًا."
 
     keyboard = stages_keyboard(
         stages,
@@ -90,28 +83,35 @@ async def stage_button(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
 
-    await query.answer()
-
-    response = (
-        supabase
-        .table("stages")
-        .select("*")
-        .eq("id", stage_id)
-        .limit(1)
-        .execute()
-    )
-
-    stages = response.data or []
+    try:
+        response = (
+            supabase
+            .table("stages")
+            .select("*")
+            .eq("id", stage_id)
+            .limit(1)
+            .execute()
+        )
+        stages = response.data or []
+    except Exception as exc:
+        print("STUDENT STAGE ERROR:", type(exc).__name__)
+        await query.answer()
+        await query.edit_message_text(
+            "❌ تعذر تحميل المرحلة حاليًا. يمكنك العودة والمحاولة لاحقًا.",
+            reply_markup=stages_back_keyboard(query.from_user.id),
+        )
+        return
 
     if not stages:
+        await query.answer()
         await query.edit_message_text(
-            "❌ تعذر العثور على هذه المرحلة.",
+            "❌ هذه المرحلة غير متاحة حاليًا. اختر مرحلة أخرى.",
             reply_markup=stages_back_keyboard(
                 query.from_user.id
             ),
@@ -121,9 +121,10 @@ async def stage_button(
     stage = stages[0]
 
     if not stage["is_active"]:
-        await query.answer(
-            "🔒 هذه المرحلة غير متاحة حالياً.",
-            show_alert=True,
+        await query.answer()
+        await query.edit_message_text(
+            "🔒 هذه المرحلة غير متاحة حاليًا. اختر مرحلة أخرى.",
+            reply_markup=stages_back_keyboard(query.from_user.id),
         )
         return
 
@@ -156,13 +157,13 @@ async def locked_stage_button(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
 
     await query.answer(
-        "🔒 هذه المرحلة غير متاحة حالياً.",
+        "🔒 هذه المرحلة غير متاحة حاليًا.",
         show_alert=True,
     )

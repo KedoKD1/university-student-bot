@@ -85,7 +85,7 @@ def _stage_keyboard(
 
     keyboard.append([
         InlineKeyboardButton(
-            text="⬅️ رجوع للإعدادات",
+            text="⬅️ رجوع إلى الإعدادات",
             callback_data=f"main:settings:back:{user_id}",
         )
     ])
@@ -306,14 +306,14 @@ async def show_settings_stages(
         )
 
         await query.answer(
-            "❌ تعذر تحميل المراحل حالياً.",
+            "❌ تعذر تحميل المراحل حاليًا.",
             show_alert=True,
         )
         return
 
     if not stages:
         await query.answer(
-            "❌ لا توجد مراحل متاحة حالياً.",
+            "❌ لا توجد مراحل متاحة حاليًا.",
             show_alert=True,
         )
         return
@@ -359,8 +359,8 @@ async def select_settings_stage(
 
     if str(query.from_user.id) != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
@@ -416,7 +416,7 @@ async def select_settings_stage(
 
     if not stage.get("is_active"):
         await query.answer(
-            "🔒 هذه المرحلة غير متاحة حالياً.",
+            "🔒 هذه المرحلة غير متاحة حاليًا.",
             show_alert=True,
         )
         return
@@ -641,15 +641,15 @@ async def student_settings_callback(
 
         except (TypeError, ValueError):
             await query.answer(
-                "❌ المستخدم غير صالح.",
+                "❌ اختيار غير صالح.",
                 show_alert=True,
             )
             return
 
         if query.from_user.id != owner_id:
             await query.answer(
-                "⛔ هذا الاختيار مو إلك.\n"
-                "استخدم /start حتى تحصل على قائمتك الخاصة.",
+                "⛔ هذا الاختيار ليس لك.\n"
+                "استخدم /start لفتح قائمتك الخاصة.",
                 show_alert=True,
             )
             return
@@ -687,15 +687,15 @@ async def student_settings_callback(
 
     except (TypeError, ValueError):
         await query.answer(
-            "❌ المستخدم غير صالح.",
+            "❌ اختيار غير صالح.",
             show_alert=True,
         )
         return
 
     if query.from_user.id != owner_id:
         await query.answer(
-            "⛔ هذا الاختيار مو إلك.\n"
-            "استخدم /start حتى تحصل على قائمتك الخاصة.",
+            "⛔ هذا الاختيار ليس لك.\n"
+            "استخدم /start لفتح قائمتك الخاصة.",
             show_alert=True,
         )
         return
