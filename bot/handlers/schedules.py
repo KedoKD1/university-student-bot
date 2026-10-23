@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -98,11 +100,7 @@ async def show_schedules(
         )
         stages = response.data or []
     except Exception as exc:
-        print(
-            "SCHEDULE STAGES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SCHEDULE STAGES ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المراحل حاليًا.",
             reply_markup=InlineKeyboardMarkup([
@@ -188,11 +186,7 @@ async def student_schedule_stage(
         )
         stages = stage_response.data or []
     except Exception as exc:
-        print(
-            "SCHEDULE STAGE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SCHEDULE STAGE ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المرحلة.",
             reply_markup=schedule_back_keyboard(
@@ -235,11 +229,7 @@ async def student_schedule_stage(
         )
         schedules = response.data or []
     except Exception as exc:
-        print(
-            "SCHEDULE READ ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SCHEDULE READ ERROR:', exc)
         await query.edit_message_text(
             f"📅 جدول المرحلة "
             f"{stage['stage_number']}\n\n"
@@ -288,11 +278,7 @@ async def student_schedule_stage(
             ),
         )
     except Exception as exc:
-        print(
-            "SCHEDULE SEND ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SCHEDULE SEND ERROR:', exc)
         await query.message.reply_text(
             "❌ حدث خطأ أثناء عرض الجدول.",
             reply_markup=schedule_back_keyboard(

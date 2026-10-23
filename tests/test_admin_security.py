@@ -3,7 +3,7 @@ import copy
 import unittest
 import warnings
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from telegram import Document, PhotoSize
 from telegram.ext import ApplicationHandlerStop, ConversationHandler
@@ -194,6 +194,8 @@ class AdminSecurityTests(unittest.IsolatedAsyncioTestCase):
         self.db.grant("admin", permissions.PERMISSION_MANAGE_ADMINS)
         self.db.rows["telegram_users"] = [{"telegram_id": 105, "username": "user_name"}]
         ctx = context()
+        ctx.bot.get_chat = AsyncMock(return_value=SimpleNamespace(
+            id=105, type='private', username='user_name', first_name='Synthetic', last_name=None))
         await tools.role_add_start(update(102, ctx, data="role_add:102"), ctx)
         self.assertEqual(await tools.role_receive_username(update(102, ctx, text="@user_name"), ctx), tools.ROLE_SELECTION)
         self.assertEqual(ctx.admin_data["role_target_id"], 105)

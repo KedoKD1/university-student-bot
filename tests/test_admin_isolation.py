@@ -3,7 +3,8 @@ import ast
 import copy
 import unittest
 import warnings
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from telegram import Document, PhotoSize
 from telegram.ext import Application, ConversationHandler
@@ -33,6 +34,11 @@ class AdminChatIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.notification_send = send.start()
         self.addCleanup(send.stop)
         self.ctx = context()
+        self.ctx.bot.get_chat = AsyncMock(side_effect=lambda target_id: SimpleNamespace(
+            id=target_id, type='private', first_name='Synthetic', last_name=None,
+            username=next(row['username'] for row in self.db.rows['telegram_users']
+                          if row['telegram_id'] == target_id),
+        ))
         self.reset_application()
 
     def reset_application(self):

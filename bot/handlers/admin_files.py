@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import (
@@ -1402,7 +1404,7 @@ async def receive_add_file_upload(
             )
 
     except Exception as exc:
-        print("FILE SAVE ERROR:", type(exc).__name__, exc)
+        log_error('FILE SAVE ERROR:', exc)
 
         await message.reply_text(
             "❌ حدث خطأ أثناء حفظ الملف.\n\n"
@@ -1706,7 +1708,7 @@ async def receive_edit_file_order(
             )
 
     except Exception as exc:
-        print("FILE EDIT ERROR:", type(exc).__name__, exc)
+        log_error('FILE EDIT ERROR:', exc)
         await message.reply_text(
             "❌ حدث خطأ أثناء تعديل الملف."
         )
@@ -1800,7 +1802,7 @@ async def set_file_status(
             )
 
     except Exception as exc:
-        print("FILE STATUS ERROR:", type(exc).__name__, exc)
+        log_error('FILE STATUS ERROR:', exc)
         await query.answer(
             "❌ فشل تحديث حالة الملف.",
             show_alert=True,
@@ -1985,7 +1987,7 @@ async def confirm_delete_file(
             )
 
     except Exception as exc:
-        print("FILE DELETE ERROR:", type(exc).__name__, exc)
+        log_error('FILE DELETE ERROR:', exc)
         await query.answer(
             "❌ فشل حذف الملف.",
             show_alert=True,

@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -37,7 +39,7 @@ async def show_stages(
             if stages else "لا توجد مراحل دراسية متاحة حاليًا. يمكنك المحاولة لاحقًا."
         )
     except Exception as exc:
-        print("STUDENT STAGES ERROR:", type(exc).__name__)
+        log_error('STUDENT STAGES ERROR:', exc)
         stages = []
         text = "❌ تعذر تحميل المراحل حاليًا. يمكنك العودة والمحاولة لاحقًا."
 
@@ -100,7 +102,7 @@ async def stage_button(
         )
         stages = response.data or []
     except Exception as exc:
-        print("STUDENT STAGE ERROR:", type(exc).__name__)
+        log_error('STUDENT STAGE ERROR:', exc)
         await query.answer()
         await query.edit_message_text(
             "❌ تعذر تحميل المرحلة حاليًا. يمكنك العودة والمحاولة لاحقًا.",

@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     CallbackQueryHandler,
@@ -576,7 +578,7 @@ async def start_add_subject(
     try:
         response = supabase.table("stages").select("id").eq("id", stage_id).limit(1).execute()
     except Exception as exc:
-        print("SUBJECT STAGE ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT STAGE ERROR:', exc)
         clear_subject_conversation(context)
         await query.answer("❌ تعذر بدء العملية.", show_alert=True)
         return ConversationHandler.END
@@ -646,7 +648,7 @@ async def receive_add_name(
         )
 
     except Exception as exc:
-        print("SUBJECT NAME CHECK ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT NAME CHECK ERROR:', exc)
         clear_subject_conversation(context)
         await update.message.reply_text("❌ تعذر التحقق من اسم المادة.")
         return ConversationHandler.END
@@ -764,7 +766,7 @@ async def receive_add_order(
             raise ValueError("Supabase returned no saved subject.")
 
     except Exception as exc:
-        print("SUBJECT SAVE ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT SAVE ERROR:', exc)
         clear_subject_conversation(context)
         await update.message.reply_text(
             "❌ حدث خطأ أثناء إضافة المادة.\n"
@@ -816,7 +818,7 @@ async def start_edit_subject(
         )
 
     except Exception as exc:
-        print("SUBJECT READ ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT READ ERROR:', exc)
         clear_subject_conversation(context)
         await query.answer("❌ تعذر بدء العملية.", show_alert=True)
         return ConversationHandler.END
@@ -902,7 +904,7 @@ async def receive_edit_name(
         )
 
     except Exception as exc:
-        print("SUBJECT NAME CHECK ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT NAME CHECK ERROR:', exc)
         clear_subject_conversation(context)
         await update.message.reply_text("❌ تعذر التحقق من اسم المادة.")
         return ConversationHandler.END
@@ -1025,7 +1027,7 @@ async def receive_edit_order(
             raise ValueError("Supabase returned no saved subject.")
 
     except Exception as exc:
-        print("SUBJECT SAVE ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT SAVE ERROR:', exc)
         clear_subject_conversation(context)
         await update.message.reply_text(
             "❌ حدث خطأ أثناء تعديل المادة.\n"
@@ -1242,7 +1244,7 @@ async def set_subject_status(
             return
 
     except Exception as exc:
-        print("SUBJECT STATUS ERROR:", type(exc).__name__, exc)
+        log_error('SUBJECT STATUS ERROR:', exc)
         await query.answer(
             "❌ حدث خطأ أثناء تحديث حالة المادة.",
             show_alert=True,

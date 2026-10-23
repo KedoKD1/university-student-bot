@@ -1,5 +1,8 @@
+from bot.utils.logging_security import log_error
+
 import asyncio
 from datetime import datetime, timezone
+from time import monotonic
 
 from telegram import (
     InlineKeyboardButton,
@@ -40,6 +43,14 @@ from bot.utils.permissions import (
     NOTIFICATION_CONTENT,
     NOTIFICATION_CONFIRM,
 ) = range(4)
+
+PREFERENCE_BATCH_SIZE = 100
+PREFERENCE_MAX_AGE = 1.0
+PRIVATE_NOTIFICATION_AUDIENCES = frozenset({'all_users', 'user'})
+SHARED_BROADCAST_UNAVAILABLE = (
+    "⛔ لا يمكن البث إلى مجموعة أو قناة مع احترام إيقاف الإشعارات لكل طالب. "
+    "اختر المستخدمين برسائل خاصة."
+)
 
 
 # ============================================================
@@ -194,11 +205,7 @@ async def _get_chats(
         return list(available.values())
 
     except Exception as exc:
-        print(
-            "GET NOTIFICATION CHATS ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GET NOTIFICATION CHATS ERROR:', exc)
         return []
 
 
@@ -388,6 +395,10 @@ async def notification_audience(
         ":",
         1,
     )[1]
+
+    if audience in {'group', 'channel'}:
+        await query.answer(SHARED_BROADCAST_UNAVAILABLE, show_alert=True)
+        return NOTIFICATION_AUDIENCE
 
     if audience == "all":
         notification[
@@ -641,46 +652,9 @@ async def notification_chat(
         )
         return NOTIFICATION_AUDIENCE
 
-    try:
-        rows = supabase.table("bot_chats").select("chat_id").eq(
-            "chat_id", target_id
-        ).eq("is_active", True).execute().data or []
-        target = await accessible_chat(context.bot, target_id, audience_type) if rows else None
-    except Exception as exc:
-        print("NOTIFICATION DESTINATION ERROR:", type(exc).__name__)
-        target = None
-    if target is None:
-        await query.answer("❌ هذه المحادثة غير متاحة للتبليغات.", show_alert=True)
-        return NOTIFICATION_AUDIENCE
-    audience_value = str(target.id)
-
-    notification = _get_notification(
-        context
-    )
-
-    if notification is None:
-        return ConversationHandler.END
-
-    notification[
-        "audience_type"
-    ] = audience_type
-
-    notification[
-        "audience_value"
-    ] = audience_value
-
-    context.admin_data[
-        "admin_notification"
-    ] = notification
-
-    await query.answer()
-
-    await query.edit_message_text(
-        "📝 أرسل عنوان التبليغ:",
-        reply_markup=_cancel_keyboard(user_id),
-    )
-
-    return NOTIFICATION_TITLE
+    # Shared posts cannot exclude opted-out members. Old buttons fail closed too.
+    await query.answer(SHARED_BROADCAST_UNAVAILABLE, show_alert=True)
+    return NOTIFICATION_AUDIENCE
 
 
 # ============================================================
@@ -848,6 +822,11 @@ async def notification_content(
         "audience_type"
     )
 
+    if audience_type not in PRIVATE_NOTIFICATION_AUDIENCES:
+        _clear_notification(context)
+        await message.reply_text(SHARED_BROADCAST_UNAVAILABLE)
+        return ConversationHandler.END
+
     audience_value = notification.get(
         "audience_value"
     )
@@ -979,6 +958,11 @@ async def notification_confirm(
         "audience_type"
     )
 
+    if audience_type not in PRIVATE_NOTIFICATION_AUDIENCES:
+        _clear_notification(context)
+        await query.edit_message_text(SHARED_BROADCAST_UNAVAILABLE)
+        return ConversationHandler.END
+
     audience_value = notification.get(
         "audience_value"
     )
@@ -1014,11 +998,7 @@ async def notification_confirm(
         )
 
     except Exception as exc:
-        print(
-            "CREATE NOTIFICATION ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('CREATE NOTIFICATION ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر إنشاء التبليغ في قاعدة البيانات."
@@ -1053,11 +1033,7 @@ async def notification_confirm(
         )
 
     except Exception as exc:
-        print(
-            "SEND NOTIFICATION ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SEND NOTIFICATION ERROR:', exc)
 
         try:
             (
@@ -1074,11 +1050,7 @@ async def notification_confirm(
             )
 
         except Exception as update_exc:
-            print(
-                "UPDATE FAILED NOTIFICATION ERROR:",
-                type(update_exc).__name__,
-                update_exc,
-            )
+            log_error('UPDATE FAILED NOTIFICATION ERROR:', update_exc)
 
         await query.edit_message_text(
             "❌ حدث خطأ أثناء إرسال التبليغ."
@@ -1165,6 +1137,8 @@ async def _get_recipients(
     audience_type: str,
     audience_value=None,
 ):
+    if audience_type not in PRIVATE_NOTIFICATION_AUDIENCES:
+        return []
     if audience_type == "all_users":
         response = (
             supabase
@@ -1184,9 +1158,9 @@ async def _get_recipients(
                 continue
 
             try:
-                recipients.append(
-                    int(telegram_id)
-                )
+                target = int(telegram_id)
+                if target > 0:
+                    recipients.append(target)
 
             except (
                 TypeError,
@@ -1226,6 +1200,18 @@ async def _get_recipients(
 # ============================================================
 # Send notification
 # ============================================================
+
+def _disabled_notification_recipients(recipients):
+    """Missing rows opt in by the existing default; failed/incomplete reads do not."""
+    response = supabase.table('user_settings').select(
+        'telegram_id, notifications_enabled', count='exact'
+    ).in_('telegram_id', recipients).limit(len(recipients)).execute()
+    rows = response.data or []
+    if type(response.count) is not int or response.count != len(rows):
+        raise ValueError('Incomplete notification preference verification')
+    return {int(row['telegram_id']) for row in rows
+            if row.get('notifications_enabled') is not True}
+
 
 async def _send_notification(
     notification_id: int,
@@ -1289,9 +1275,38 @@ async def _send_notification(
 
     successful = 0
     failed = 0
+    private_audience = audience_type in PRIVATE_NOTIFICATION_AUDIENCES
+    opted_out = set()
+    preference_batch = []
+    checked_at = None
 
-    for chat_id in recipients:
+    def refresh_preferences(force=False):
+        nonlocal checked_at
+        if force or checked_at is None or monotonic() - checked_at >= PREFERENCE_MAX_AGE:
+            opted_out.update(_disabled_notification_recipients(preference_batch))
+            checked_at = monotonic()
+
+    for index, chat_id in enumerate(recipients):
         sent = False
+        skipped = False
+        preference_failed = False
+
+        if private_audience:
+            if chat_id in opted_out:
+                total -= 1
+                continue
+            if index % PREFERENCE_BATCH_SIZE == 0:
+                preference_batch = recipients[index:index + PREFERENCE_BATCH_SIZE]
+                checked_at = None
+            try:
+                refresh_preferences()
+            except Exception as exc:
+                log_error('NOTIFICATION PREFERENCES ERROR:', exc)
+                failed += len(recipients) - index
+                break
+            if chat_id in opted_out:
+                total -= 1
+                continue
 
         if audience_type in {"group", "channel"}:
             destination = await accessible_chat(bot, chat_id, audience_type)
@@ -1301,6 +1316,18 @@ async def _send_notification(
             chat_id = destination.id
 
         for attempt in range(2):
+            if private_audience:
+                try:
+                    # Refresh after RetryAfter as well as during a slow batch.
+                    refresh_preferences(force=attempt > 0)
+                except Exception as exc:
+                    log_error('NOTIFICATION PREFERENCES ERROR:', exc)
+                    preference_failed = True
+                    break
+                if chat_id in opted_out:
+                    total -= 1
+                    skipped = True
+                    break
             try:
                 await bot.send_message(
                     chat_id=chat_id,
@@ -1351,19 +1378,21 @@ async def _send_notification(
                 break
 
             except Exception as exc:
-                print(
-                    "NOTIFICATION SEND ERROR:",
-                    type(exc).__name__,
-                    exc,
-                )
+                log_error('NOTIFICATION SEND ERROR:', exc)
                 break
 
-        if not sent:
+        if preference_failed:
+            failed += len(recipients) - index
+            break
+        if not sent and not skipped:
             failed += 1
 
         await asyncio.sleep(0.05)
 
-    if failed == 0:
+    if total == 0:
+        status = "failed"
+
+    elif failed == 0:
         status = "sent"
 
     elif successful == 0:
@@ -1377,6 +1406,7 @@ async def _send_notification(
         .table("notifications")
         .update({
             "status": status,
+            "total_recipients": total,
             "successful_sends": successful,
             "failed_sends": failed,
             "sent_at": datetime.now(
@@ -1513,7 +1543,7 @@ async def notification_cancel(
     try:
         allowed = await _has_notification_permission(user_id)
     except Exception as exc:
-        print("NOTIFICATION CANCEL PERMISSION ERROR:", type(exc).__name__)
+        log_error('NOTIFICATION CANCEL PERMISSION ERROR:', exc)
         allowed = False
 
     _clear_notification(context)

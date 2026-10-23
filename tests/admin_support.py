@@ -141,9 +141,10 @@ class Query:
             self.db.reads.append(self.table)
         else:
             self.db.writes.append((self.table, self.action, copy.deepcopy(self.payload)))
+        count = len(matched)  # PostgREST exact count is independent of the page limit.
         if self.maximum is not None:
             matched = matched[:self.maximum]
-        return SimpleNamespace(data=copy.deepcopy(matched), count=len(matched))
+        return SimpleNamespace(data=copy.deepcopy(matched), count=count)
 
 
 def context(data=None):

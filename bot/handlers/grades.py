@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -6,6 +8,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
+from bot.utils.content_access import active_stages
 
 
 # ============================================================
@@ -150,11 +153,7 @@ async def show_grades(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "GRADES STAGES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GRADES STAGES ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل المراحل حاليًا.",
@@ -248,11 +247,7 @@ async def show_grade_files(
         files = response.data or []
 
     except Exception as exc:
-        print(
-            "GRADE FILES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GRADE FILES ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل ملفات الدرجات.",
@@ -290,6 +285,18 @@ async def show_grade_files(
 # Student: send one file
 # ============================================================
 
+async def _grade_parent_available(query, stage_id):
+    try:
+        if str(stage_id) in active_stages(supabase, [stage_id]):
+            return True
+    except Exception as exc:
+        log_error('GRADE PARENT AVAILABILITY ERROR:', exc)
+        await query.answer("❌ تعذر التحقق من المرحلة حاليًا.", show_alert=True)
+        return False
+    await query.answer("🔒 هذه المرحلة غير متاحة حاليًا.", show_alert=True)
+    return False
+
+
 async def send_grade_file(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -323,11 +330,7 @@ async def send_grade_file(
         rows = response.data or []
 
     except Exception as exc:
-        print(
-            "GRADE FILE READ ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GRADE FILE READ ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تحميل الملف.",
@@ -356,6 +359,9 @@ async def send_grade_file(
         return
 
     await query.answer()
+
+    if not await _grade_parent_available(query, stage_id):
+        return
 
     description = (
         grade_file.get("description") or ""
@@ -399,11 +405,7 @@ async def send_grade_file(
             )
 
     except Exception as exc:
-        print(
-            "GRADE FILE SEND ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GRADE FILE SEND ERROR:', exc)
 
         await query.message.reply_text(
             "❌ حدث خطأ أثناء إرسال ملف الدرجات."
@@ -443,11 +445,7 @@ async def send_all_grade_files(
         files = response.data or []
 
     except Exception as exc:
-        print(
-            "ALL GRADE FILES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ALL GRADE FILES ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تحميل الملفات.",
@@ -466,7 +464,9 @@ async def send_all_grade_files(
 
     sent_count = 0
 
-    for grade_file in files:
+    for index, grade_file in enumerate(files):
+        if index % 10 == 0 and not await _grade_parent_available(query, stage_id):
+            return
         telegram_file_id = grade_file.get(
             "telegram_file_id"
         )
@@ -518,11 +518,7 @@ async def send_all_grade_files(
             sent_count += 1
 
         except Exception as exc:
-            print(
-                "GRADE FILE SEND ERROR:",
-                type(exc).__name__,
-                exc,
-            )
+            log_error('GRADE FILE SEND ERROR:', exc)
 
     if sent_count == 0:
         await query.message.reply_text(

@@ -1,4 +1,7 @@
 """Telegram chat accessibility using the existing bot_chats records."""
+
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram.error import BadRequest, ChatMigrated, Forbidden, TelegramError
@@ -32,7 +35,7 @@ def mark_chat_inactive(chat_id):
             "chat_id", chat_id
         ).execute()
     except Exception as exc:
-        print("CHAT STATUS ERROR:", type(exc).__name__)
+        log_error('CHAT STATUS ERROR:', exc)
 
 
 def record_chat(chat, active):
@@ -46,7 +49,7 @@ def record_chat(chat, active):
             "is_active": active,
         }, on_conflict="chat_id").execute()
     except Exception as exc:
-        print("CHAT TRACKING ERROR:", type(exc).__name__)
+        log_error('CHAT TRACKING ERROR:', exc)
 
 
 async def accessible_chat(bot, chat_id, audience_type=None, *, migrated=False):
@@ -80,7 +83,7 @@ async def accessible_chat(bot, chat_id, audience_type=None, *, migrated=False):
     except (Forbidden, BadRequest):
         mark_chat_inactive(numeric_id)
     except TelegramError as exc:
-        print("CHAT ACCESS ERROR:", type(exc).__name__)
+        log_error('CHAT ACCESS ERROR:', exc)
     except Exception as exc:
-        print("CHAT ACCESS ERROR:", type(exc).__name__)
+        log_error('CHAT ACCESS ERROR:', exc)
     return None

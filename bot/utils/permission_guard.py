@@ -8,6 +8,7 @@ from bot.utils.permissions import (
 from bot.utils.debug_logger import (
     logger,
     DEBUG_ENABLED,
+    log_error,
 )
 
 
@@ -26,14 +27,7 @@ async def permission_guard(
         raise ApplicationHandlerStop
 
     if DEBUG_ENABLED:
-        logger.info(
-            "[PERMISSION GUARD] CALLBACK RECEIVED | "
-            "user_id=%s | callback_data=%r",
-            query.from_user.id
-            if query.from_user
-            else None,
-            callback_data,
-        )
+        logger.info("[PERMISSION GUARD] CALLBACK RECEIVED")
 
     permission = permission_for_callback(
         callback_data
@@ -42,19 +36,14 @@ async def permission_guard(
     if DEBUG_ENABLED:
         logger.info(
             "[PERMISSION GUARD] PERMISSION RESOLUTION | "
-            "callback_data=%r | permission=%r",
-            callback_data,
+            "permission=%r",
             permission,
         )
 
     # Not an admin-protected callback.
     if permission is None:
         if DEBUG_ENABLED:
-            logger.info(
-                "[PERMISSION GUARD] NOT PROTECTED | "
-                "callback_data=%r",
-                callback_data,
-            )
+            logger.info("[PERMISSION GUARD] NOT PROTECTED")
 
         return
 
@@ -62,11 +51,7 @@ async def permission_guard(
 
     if user is None:
         if DEBUG_ENABLED:
-            logger.warning(
-                "[PERMISSION GUARD] NO USER FOUND | "
-                "callback_data=%r",
-                callback_data,
-            )
+            logger.warning("[PERMISSION GUARD] NO USER FOUND")
 
         raise ApplicationHandlerStop
 
@@ -89,45 +74,27 @@ async def permission_guard(
         if DEBUG_ENABLED:
             logger.info(
                 "[PERMISSION GUARD] RESULT | "
-                "user_id=%s | permission=%r | allowed=%s",
-                user.id,
+                "permission=%r | allowed=%s",
                 permission,
                 allowed,
             )
 
     except Exception as exc:
-        logger.error(
-            "[PERMISSION GUARD] PERMISSION CHECK ERROR | "
-            "user_id=%s | permission=%r | "
-            "error_type=%s | error=%s",
-            user.id,
-            permission,
-            type(exc).__name__,
-            exc,
-            exc_info=True,
-        )
+        log_error("[PERMISSION GUARD] PERMISSION CHECK ERROR", exc)
 
         raise ApplicationHandlerStop from exc
 
     if allowed:
         if DEBUG_ENABLED:
-            logger.info(
-                "[PERMISSION GUARD] ALLOWED | "
-                "user_id=%s | callback_data=%r",
-                user.id,
-                callback_data,
-            )
+            logger.info("[PERMISSION GUARD] ALLOWED")
 
         return
 
     if DEBUG_ENABLED:
         logger.warning(
             "[PERMISSION GUARD] DENIED | "
-            "user_id=%s | permission=%r | "
-            "callback_data=%r",
-            user.id,
+            "permission=%r",
             permission,
-            callback_data,
         )
 
     try:
@@ -137,15 +104,6 @@ async def permission_guard(
         )
 
     except Exception as exc:
-        logger.error(
-            "[PERMISSION GUARD] FAILED TO ANSWER QUERY | "
-            "user_id=%s | callback_data=%r | "
-            "error_type=%s | error=%s",
-            user.id,
-            callback_data,
-            type(exc).__name__,
-            exc,
-            exc_info=True,
-        )
+        log_error("[PERMISSION GUARD] FAILED TO ANSWER QUERY", exc)
 
     raise ApplicationHandlerStop

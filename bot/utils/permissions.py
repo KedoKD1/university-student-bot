@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -225,11 +227,7 @@ async def get_admin(user_id: int):
         return admin
 
     except Exception as exc:
-        print(
-            "GET ADMIN ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GET ADMIN ERROR:', exc)
         return None
 
 
@@ -350,11 +348,7 @@ async def get_role_permissions(
                     )
 
     except Exception as exc:
-        print(
-            "ROLE PERMISSIONS DATABASE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE PERMISSIONS DATABASE ERROR:', exc)
 
     _set_cached(
         _ROLE_PERMISSION_CACHE,

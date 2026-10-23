@@ -1,3 +1,7 @@
+from bot.utils.logging_security import configure_logging, log_error, logger
+
+configure_logging()
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -213,7 +217,6 @@ from bot.handlers.user_tracking import (
 )
 
 from bot.utils.debug_logger import (
-    configure_logging,
     log_update,
     global_error_handler,
 )
@@ -267,10 +270,7 @@ def main():
         .execute()
     )
 
-    print(
-        f"Supabase connection successful: "
-        f"{response.data}"
-    )
+    logger.info("Supabase connection successful")
 
     application = (
         Application
@@ -1237,9 +1237,7 @@ def main():
     # Run
     # ========================================================
 
-    print(
-        "University Student Bot is running..."
-    )
+    logger.info("University Student Bot is running")
 
     application.run_polling(
         allowed_updates=Update.ALL_TYPES
@@ -1247,4 +1245,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        log_error("BOT STARTUP ERROR", exc)
+        raise SystemExit(1) from None
