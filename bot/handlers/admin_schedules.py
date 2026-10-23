@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -651,10 +653,7 @@ async def receive_schedule_image(
             )
 
     except Exception as exc:
-        print(
-            "SCHEDULE SAVE ERROR:"
-            f" {type(exc).__name__}: {exc}"
-        )
+        log_error('SCHEDULE SAVE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ تعذر حفظ صورة الجدول.\n\n"
@@ -751,10 +750,7 @@ async def delete_schedule(
         ).execute()
 
     except Exception as exc:
-        print(
-            "SCHEDULE DELETE ERROR:"
-            f" {type(exc).__name__}: {exc}"
-        )
+        log_error('SCHEDULE DELETE ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر حذف الجدول."

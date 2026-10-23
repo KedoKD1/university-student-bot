@@ -1,4 +1,7 @@
 """A global, fail-closed subscription gate for student updates."""
+
+from bot.utils.logging_security import log_error
+
 import re
 from time import monotonic
 from urllib.parse import urlsplit
@@ -58,7 +61,7 @@ async def _required_channel(cache, force):
         channel = _channel_reference(value if str(value or "").strip() else REQUIRED_CHANNEL_ID)
     except Exception as exc:
         # An environment fallback during a DB outage could use an obsolete channel.
-        print("SUBSCRIPTION CONFIG ERROR:", type(exc).__name__)
+        log_error('SUBSCRIPTION CONFIG ERROR:', exc)
         channel = None
     cache["config"] = (monotonic() + (CONFIG_TTL if channel else FAILURE_TTL), channel)
     return channel
@@ -108,7 +111,7 @@ async def membership(context, user_id, *, force=False):
             raise ValueError("Unavailable membership status")
         result = (is_member(member), link, False)
     except Exception as exc:
-        print("SUBSCRIPTION CHECK ERROR:", type(exc).__name__)
+        log_error('SUBSCRIPTION CHECK ERROR:', exc)
         cache.pop("channel", None)
         result = (False, link, True)
     if len(members) >= 2048:
@@ -121,7 +124,7 @@ async def _admin_access(user_id):
     try:
         return await is_admin(user_id)
     except Exception as exc:
-        print("SUBSCRIPTION ROLE ERROR:", type(exc).__name__)
+        log_error('SUBSCRIPTION ROLE ERROR:', exc)
         return False
 
 

@@ -289,6 +289,7 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_role_callbacks_support_opaque_row_ids_and_telegram_size_limit(self):
         tools = MODULES['admin_tools']
+        self.ctx.bot.get_chat.return_value = SimpleNamespace(id=4503599627370495, type='private')
         self.db.rows['admins'][3].update(id='00000000-0000-0000-0000-000000000004',
                                         telegram_id=4503599627370495)
         await tools.role_manage(update(102, self.ctx, data='role_manage:00000000-0000-0000-0000-000000000004'), self.ctx)
@@ -304,6 +305,7 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(len(b.callback_data.encode()) <= 64 for row in markup.inline_keyboard for b in row))
 
     async def test_role_change_and_removal_reject_stale_foreign_noop_and_legacy_buttons(self):
+        self.ctx.bot.get_chat.return_value = SimpleNamespace(id=104, type='private')
         tools = MODULES['admin_tools']
         for data in ['change_role:102:admin:admin:102', 'change_role:102:moderator:moderator:102',
                      'change_role:102:moderator:admin:104', 'change_role:101:admin:owner:102',
@@ -318,6 +320,8 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_role_permission_revocation_and_pending_role_snapshot(self):
         tools = MODULES['admin_tools']
+        self.ctx.bot.get_chat.return_value = SimpleNamespace(
+            id=104, type='private', username='another_admin', first_name='Synthetic', last_name=None)
         self.db.rows['telegram_users'] = [{'telegram_id': 104, 'username': 'another_admin'}]
         await tools.role_add_start(update(102, self.ctx, data='role_add:102'), self.ctx)
         await tools.role_receive_username(update(102, self.ctx, text='another_admin'), self.ctx)
@@ -403,7 +407,7 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
             update(102, self.ctx, data='notify_chat:channel:-1001:102'), self.ctx)
         self.assertEqual(result, MODULES['admin_notifications'].NOTIFICATION_AUDIENCE)
         self.assertNotIn('audience_value', self.ctx.admin_data['admin_notification'])
-        self.assertFalse(self.db.rows['bot_chats'][0]['is_active'])
+        self.assertTrue(self.db.rows['bot_chats'][0]['is_active'])
 
     async def test_notification_delivery_counts_and_inaccessible_destinations(self):
         notifications = MODULES['admin_notifications']
@@ -411,28 +415,27 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
         self.db.rows['bot_chats'] = [{'chat_id': -1001, 'is_active': True}]
         self.ctx.bot.get_chat.side_effect = Forbidden('private')
         result = await notifications._send_notification(1, self.ctx.bot, 'channel', '-1001', 'Title', 'Content')
-        self.assertEqual(result, (1, 0, 1, 'failed'))
+        self.assertEqual(result, (0, 0, 0, 'failed'))
         self.ctx.bot.send_message.assert_not_awaited()
-        self.assertFalse(self.db.rows['bot_chats'][0]['is_active'])
+        self.assertTrue(self.db.rows['bot_chats'][0]['is_active'])
         self.ctx.bot.get_chat.side_effect = None
         with patch.object(notifications.asyncio, 'sleep', new=AsyncMock()):
             result = await notifications._send_notification(1, self.ctx.bot, 'user', '105', 'Title', 'Content')
         self.assertEqual(result, (1, 1, 0, 'sent'))
 
-    async def test_notification_send_failure_after_selection_marks_only_permanent_loss(self):
+    async def test_private_notification_send_failure_preserves_historical_chats(self):
         notifications = MODULES['admin_notifications']
         self.db.rows['notifications'] = [{'id': 1}]
         self.db.rows['bot_chats'] = [{'chat_id': -1001, 'is_active': True}]
-        for failure, active in [(TimedOut(), True), (BadRequest('message is too long'), True),
-                                (Forbidden('bot was kicked'), False)]:
+        for failure in (TimedOut(), BadRequest('message is too long'), Forbidden('bot was kicked')):
             self.db.rows['bot_chats'][0]['is_active'] = True
             self.ctx.bot.send_message.side_effect = failure
             with patch.object(notifications.asyncio, 'sleep', new=AsyncMock()):
-                self.assertEqual(await notifications._send_notification(1, self.ctx.bot, 'channel', '-1001', 'T', 'C'),
+                self.assertEqual(await notifications._send_notification(1, self.ctx.bot, 'user', '105', 'T', 'C'),
                                  (1, 0, 1, 'failed'))
-            self.assertEqual(self.db.rows['bot_chats'][0]['is_active'], active)
+            self.assertTrue(self.db.rows['bot_chats'][0]['is_active'])
 
-    async def test_notification_migration_during_send_retries_verified_new_group(self):
+    async def test_blocked_shared_broadcast_does_not_migrate_or_change_historical_chats(self):
         notifications = MODULES['admin_notifications']
         self.db.rows['notifications'] = [{'id': 1}]
         self.db.rows['bot_chats'] = [{'chat_id': -7, 'is_active': True}]
@@ -442,10 +445,10 @@ class MaintenanceTests(unittest.IsolatedAsyncioTestCase):
         self.ctx.bot.send_message.side_effect = [ChatMigrated(-1001), None]
         with patch.object(notifications.asyncio, 'sleep', new=AsyncMock()):
             self.assertEqual(await notifications._send_notification(1, self.ctx.bot, 'group', '-7', 'T', 'C'),
-                             (1, 1, 0, 'sent'))
-        self.assertEqual([c.kwargs['chat_id'] for c in self.ctx.bot.send_message.await_args_list], [-7, -1001])
-        self.assertFalse(self.db.rows['bot_chats'][0]['is_active'])
-        self.assertTrue(self.db.rows['bot_chats'][1]['is_active'])
+                             (0, 0, 0, 'failed'))
+        self.ctx.bot.send_message.assert_not_awaited()
+        self.ctx.bot.get_chat.assert_not_awaited()
+        self.assertEqual(self.db.rows['bot_chats'], [{'chat_id': -7, 'is_active': True}])
 
 
 if __name__ == '__main__':

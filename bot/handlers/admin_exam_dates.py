@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import (
@@ -936,11 +938,7 @@ async def add_exam_notes(
             )
 
     except Exception as exc:
-        print(
-            "ADD EXAM ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ADD EXAM ERROR:', exc)
 
         await update.message.reply_text(
             "❌ تعذر إضافة موعد الامتحان."
@@ -1585,11 +1583,7 @@ async def edit_exam_notes(
             )
 
     except Exception as exc:
-        print(
-            "EDIT EXAM ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EDIT EXAM ERROR:', exc)
 
         await update.message.reply_text(
             "❌ تعذر تعديل الموعد."
@@ -1671,11 +1665,7 @@ async def disable_exam(
             )
 
     except Exception as exc:
-        print(
-            "DISABLE EXAM ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('DISABLE EXAM ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تعطيل الموعد.",
@@ -1756,11 +1746,7 @@ async def enable_exam(
             )
 
     except Exception as exc:
-        print(
-            "ENABLE EXAM ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ENABLE EXAM ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تفعيل الموعد.",
@@ -1910,11 +1896,7 @@ async def confirm_delete_exam(
             )
 
     except Exception as exc:
-        print(
-            "DELETE EXAM ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('DELETE EXAM ERROR:', exc)
 
         await query.answer(
             "❌ تعذر حذف الموعد.",

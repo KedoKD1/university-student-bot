@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import (
@@ -1163,11 +1165,7 @@ async def add_grade_upload(
             )
 
     except Exception as exc:
-        print(
-            "ADD GRADE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ADD GRADE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ حدث خطأ أثناء حفظ ملف الدرجات."
@@ -1397,11 +1395,7 @@ async def edit_grade_description(
             )
 
     except Exception as exc:
-        print(
-            "EDIT GRADE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EDIT GRADE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ حدث خطأ أثناء تعديل الملف."
@@ -1576,11 +1570,7 @@ async def replace_grade_upload(
             )
 
     except Exception as exc:
-        print(
-            "REPLACE GRADE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('REPLACE GRADE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ حدث خطأ أثناء استبدال الملف."
@@ -1707,11 +1697,7 @@ async def toggle_grade(
             )
 
     except Exception as exc:
-        print(
-            "TOGGLE GRADE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('TOGGLE GRADE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تغيير حالة الملف.",
@@ -1891,11 +1877,7 @@ async def confirm_delete_grade(
             )
 
     except Exception as exc:
-        print(
-            "DELETE GRADE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('DELETE GRADE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر حذف الملف.",

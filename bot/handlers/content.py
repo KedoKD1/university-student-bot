@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -10,6 +12,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
+from bot.utils.content_access import active_subject
 from bot.keyboards.subjects import back_stages_keyboard
 from bot.keyboards.content import (
     content_keyboard,
@@ -75,30 +78,28 @@ def back_section_keyboard(callback_data, text):
 
 async def _content_heading(query, subject_id, title):
     try:
-        rows = supabase.table("subjects").select("name, stage_id").eq(
-            "id", subject_id
-        ).eq("is_active", True).limit(1).execute().data or []
+        subject = active_subject(supabase, subject_id)
     except Exception as exc:
-        print("STUDENT CONTENT SUBJECT ERROR:", type(exc).__name__)
+        log_error('STUDENT CONTENT SUBJECT ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return None
-    if not rows or rows[0].get("stage_id") is None:
+    if subject is None:
         await query.edit_message_text(
             "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return None
-    return f"{title}\n📘 المادة: {rows[0]['name']}"
+    return f"{title}\n📘 المادة: {subject['name']}"
 
 
 async def _read_content(query, builder, keyboard):
     try:
         return builder.execute().data or []
     except Exception as exc:
-        print("STUDENT CONTENT READ ERROR:", type(exc).__name__)
+        log_error('STUDENT CONTENT READ ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
             reply_markup=keyboard,
@@ -211,6 +212,7 @@ async def send_content_collection(
     message,
     items,
     icon,
+    subject_id,
 ):
     """
     إرسال مجموعة محتويات بشكل مجمع قدر الإمكان.
@@ -275,6 +277,15 @@ async def send_content_collection(
                 start:start + MEDIA_GROUP_LIMIT
             ]
 
+            # Recheck per album, not per file, including changes during a send.
+            try:
+                available = active_subject(supabase, subject_id) is not None
+            except Exception as exc:
+                log_error('COLLECTION PARENT CHECK ERROR:', exc)
+                available = False
+            if not available:
+                return sent_count, len(items) - sent_count
+
             # Telegram يدعم Media Group للصور والفيديو
             # وكذلك مجموعات مستقلة للصوتيات والمستندات.
             try:
@@ -290,12 +301,15 @@ async def send_content_collection(
                 sent_count += len(chunk)
 
             except Exception as exc:
-                print(
-                    "MEDIA GROUP SEND ERROR:",
-                    group_type,
-                    type(exc).__name__,
-                    exc,
-                )
+                log_error('MEDIA GROUP SEND ERROR:', exc)
+
+                try:
+                    available = active_subject(supabase, subject_id) is not None
+                except Exception as parent_exc:
+                    log_error('COLLECTION FALLBACK PARENT CHECK ERROR:', parent_exc)
+                    available = False
+                if not available:
+                    return sent_count, len(items) - sent_count
 
                 # إذا فشل الـ album، نحاول إرسال
                 # العناصر بشكل منفرد حتى لا يضيع المحتوى.
@@ -314,11 +328,7 @@ async def send_content_collection(
                             failed_count += 1
 
                     except Exception as item_exc:
-                        print(
-                            "FALLBACK CONTENT SEND ERROR:",
-                            type(item_exc).__name__,
-                            item_exc,
-                        )
+                        log_error('FALLBACK CONTENT SEND ERROR:', item_exc)
                         failed_count += 1
 
     return sent_count, failed_count
@@ -348,11 +358,7 @@ async def get_collection_description(
             ).strip()
 
     except Exception as exc:
-        print(
-            "COLLECTION DESCRIPTION READ ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('COLLECTION DESCRIPTION READ ERROR:', exc)
 
     return ""
 
@@ -444,17 +450,14 @@ async def show_files(
                     description
                 )
             except Exception as exc:
-                print(
-                    "ALL FILES DESCRIPTION SEND ERROR:",
-                    type(exc).__name__,
-                    exc,
-                )
+                log_error('ALL FILES DESCRIPTION SEND ERROR:', exc)
 
         sent_count, failed_count = (
             await send_content_collection(
                 query.message,
                 files,
                 "📄",
+                subject_id,
             )
         )
 
@@ -653,6 +656,9 @@ async def file_button(
         )
         return
 
+    if await _content_heading(query, files[0].get('subject_id'), '📄 الملفات') is None:
+        return
+
     recovery_keyboard = (
         back_content_keyboard(files[0]["subject_id"], owner_id)
         if files[0].get("subject_id") is not None
@@ -674,11 +680,7 @@ async def file_button(
             )
 
     except Exception as exc:
-        print(
-            "FILE SEND ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('FILE SEND ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر إرسال الملف حاليًا. يمكنك العودة والمحاولة لاحقًا.",
@@ -953,17 +955,14 @@ async def show_all_summaries(
                 description
             )
         except Exception as exc:
-            print(
-                "ALL SUMMARIES DESCRIPTION SEND ERROR:",
-                type(exc).__name__,
-                exc,
-            )
+            log_error('ALL SUMMARIES DESCRIPTION SEND ERROR:', exc)
 
     sent_count, failed_count = (
         await send_content_collection(
             query.message,
             summaries,
             "📝",
+            subject_id,
         )
     )
 
@@ -1062,6 +1061,7 @@ async def show_all_drawings(
             query.message,
             drawings,
             "🎨",
+            subject_id,
         )
     )
 
@@ -1114,6 +1114,9 @@ async def show_drawings(
 
     await query.answer()
 
+    if await _content_heading(query, subject_id, '🎨 الرسومات') is None:
+        return
+
     response = (
         supabase
         .table("drawings")
@@ -1122,10 +1125,10 @@ async def show_drawings(
         .eq("is_active", True)
         .is_("deleted_at", "null")
         .order("sort_order")
-        .execute()
     )
-
-    drawings = response.data or []
+    drawings = await _read_content(query, response, back_content_keyboard(subject_id, owner_id))
+    if drawings is None:
+        return
 
     if not drawings:
         await query.edit_message_text(
@@ -1230,6 +1233,9 @@ async def study_item_button(
 
     await query.answer()
 
+    if await _content_heading(query, subject_id, f'{icon} المحتوى') is None:
+        return
+
     response = (
         supabase
         .table(table_name)
@@ -1269,11 +1275,7 @@ async def study_item_button(
             )
 
     except Exception as exc:
-        print(
-            "STUDY ITEM SEND ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('STUDY ITEM SEND ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر إرسال المحتوى حاليًا. يمكنك العودة والمحاولة لاحقًا.",
@@ -1312,32 +1314,22 @@ async def back_to_content(
     await query.answer()
 
     try:
-        response = (
-            supabase
-            .table("subjects")
-            .select("*")
-            .eq("id", subject_id)
-            .eq("is_active", True)
-            .limit(1)
-            .execute()
-        )
-        subjects = response.data or []
+        subject = active_subject(supabase, subject_id)
     except Exception as exc:
-        print("STUDENT CONTENT BACK ERROR:", type(exc).__name__)
+        log_error('STUDENT CONTENT BACK ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المادة حاليًا. يمكنك العودة والمحاولة لاحقًا.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
-    if not subjects:
+    if subject is None:
         await query.edit_message_text(
             "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
-    subject = subjects[0]
     stage_id = subject.get("stage_id")
 
     if stage_id is None:

@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -7,6 +9,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
+from bot.utils.content_access import active_subjects
 
 
 MAX_RESULTS_PER_TYPE = 5
@@ -264,11 +267,7 @@ async def handle_search_text(
             })
 
     except Exception as exc:
-        print(
-            "SEARCH SUBJECTS ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SEARCH SUBJECTS ERROR:', exc)
 
     # ========================================================
     # Files
@@ -305,11 +304,7 @@ async def handle_search_text(
             })
 
     except Exception as exc:
-        print(
-            "SEARCH FILES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SEARCH FILES ERROR:', exc)
 
     # ========================================================
     # Summaries
@@ -346,11 +341,7 @@ async def handle_search_text(
             })
 
     except Exception as exc:
-        print(
-            "SEARCH SUMMARIES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SEARCH SUMMARIES ERROR:', exc)
 
     # ========================================================
     # Drawings
@@ -387,13 +378,26 @@ async def handle_search_text(
             })
 
     except Exception as exc:
-        print(
-            "SEARCH DRAWINGS ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SEARCH DRAWINGS ERROR:', exc)
 
     results = results[:MAX_TOTAL_RESULTS]
+
+    # At most MAX_TOTAL_RESULTS parents; no per-result reads or full-table scan.
+    try:
+        parents = active_subjects(supabase, [
+            item['id'] if item['type'] == 'subject' else item.get('subject_id')
+            for item in results
+        ])
+        results = [item for item in results if str(
+            item['id'] if item['type'] == 'subject' else item.get('subject_id')
+        ) in parents]
+    except Exception as exc:
+        log_error('SEARCH PARENT AVAILABILITY ERROR:', exc)
+        await update.message.reply_text(
+            "❌ تعذر التحقق من توفر نتائج البحث حاليًا. حاول لاحقًا.",
+            reply_markup=search_keyboard(user_id),
+        )
+        return True
 
     # ========================================================
     # No Results

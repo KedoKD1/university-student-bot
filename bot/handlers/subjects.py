@@ -1,7 +1,10 @@
+from bot.utils.logging_security import log_error
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.database.client import supabase
+from bot.utils.content_access import active_subject
 
 from bot.keyboards.subjects import PAGE_SIZE, back_stages_keyboard, subjects_keyboard
 from bot.keyboards.content import content_keyboard
@@ -48,7 +51,7 @@ async def show_subjects(
             return
         subjects = await _get_active_subjects(stage_id)
     except Exception as exc:
-        print("STUDENT SUBJECTS ERROR:", type(exc).__name__)
+        log_error('STUDENT SUBJECTS ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المواد حاليًا. يمكنك العودة والمحاولة لاحقًا.",
             reply_markup=back_stages_keyboard(user_id),
@@ -157,32 +160,22 @@ async def subject_button(
     await query.answer()
 
     try:
-        response = (
-            supabase
-            .table("subjects")
-            .select("*")
-            .eq("id", subject_id)
-            .eq("is_active", True)
-            .limit(1)
-            .execute()
-        )
-        subjects = response.data or []
+        subject = active_subject(supabase, subject_id)
     except Exception as exc:
-        print("STUDENT SUBJECT ERROR:", type(exc).__name__)
+        log_error('STUDENT SUBJECT ERROR:', exc)
         await query.edit_message_text(
             "❌ تعذر تحميل المادة حاليًا. يمكنك العودة والمحاولة لاحقًا.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
-    if not subjects:
+    if subject is None:
         await query.edit_message_text(
             "❌ هذه المادة غير متاحة حاليًا. اختر مادة أخرى.",
             reply_markup=back_stages_keyboard(query.from_user.id),
         )
         return
 
-    subject = subjects[0]
     description = (
         subject.get("description")
         or "لا يوجد وصف للمادة حاليًا."

@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import Update
@@ -38,11 +40,7 @@ async def track_user(
             ).execute()
 
         except Exception as exc:
-            print(
-                "USER TRACKING ERROR:",
-                type(exc).__name__,
-                exc,
-            )
+            log_error('USER TRACKING ERROR:', exc)
 
     # ========================================================
     # Track groups / supergroups / channels
@@ -88,8 +86,4 @@ async def track_user(
                     record_chat(verified, True)
 
         except Exception as exc:
-            print(
-                "CHAT TRACKING ERROR:",
-                type(exc).__name__,
-                exc,
-            )
+            log_error('CHAT TRACKING ERROR:', exc)

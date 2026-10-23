@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -247,11 +249,7 @@ async def show_exam_dates(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "EXAM STAGES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EXAM STAGES ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل المراحل حاليًا.",
@@ -352,11 +350,7 @@ async def exam_stage(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "EXAM STAGE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EXAM STAGE ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل المرحلة.",
@@ -553,11 +547,7 @@ async def exam_type(
         exams = response.data or []
 
     except Exception as exc:
-        print(
-            "EXAM DATES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EXAM DATES ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل مواعيد الامتحانات.",
@@ -742,11 +732,7 @@ async def exam_back(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "EXAM BACK STAGES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('EXAM BACK STAGES ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تحميل المراحل حاليًا.",

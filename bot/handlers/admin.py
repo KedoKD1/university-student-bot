@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -531,11 +533,7 @@ async def confirm_delete_subject(
         )
 
     except Exception as exc:
-        print(
-            "DISABLE SUBJECT ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('DISABLE SUBJECT ERROR:', exc)
 
         await query.edit_message_text(
             "❌ تعذر تعطيل المادة.\n\n"

@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -179,11 +181,7 @@ async def _get_setting(
         return rows[0]
 
     except Exception as exc:
-        print(
-            "GET SETTING ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GET SETTING ERROR:', exc)
         return None
 
 
@@ -645,11 +643,7 @@ async def setting_predefined_value(
         )
 
     except Exception as exc:
-        print(
-            "SAVE SETTING ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SAVE SETTING ERROR:', exc)
 
         await query.answer(
             "❌ تعذر حفظ الإعداد.",
@@ -757,11 +751,7 @@ async def setting_value(
             invalidate_subscription(context)
 
     except Exception as exc:
-        print(
-            "SAVE SETTING ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('SAVE SETTING ERROR:', exc)
 
         await message.reply_text(
             "❌ تعذر حفظ الإعداد."

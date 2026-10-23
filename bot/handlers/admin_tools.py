@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 import re
 
 from telegram import (
@@ -177,11 +179,7 @@ def count_rows(
         return result.count or 0
 
     except Exception as exc:
-        print(
-            f"COUNT ERROR [{table}]:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error(f'COUNT ERROR [{table}]:', exc)
         return 0
 
 
@@ -443,8 +441,28 @@ async def admin_roles(
 # ============================================================
 
 def clear_role_conversation(context):
-    for key in ("role_target_id", "role_target_username", "role_owner_id", "role_target_role"):
+    for key in ("role_target_id", "role_target_username", "role_owner_id", "role_target_role",
+                "role_identity_username", "role_identity_verified"):
         context.admin_data.pop(key, None)
+
+
+async def _verify_role_identity(context, target_id, expected_username=None):
+    """Verify the immutable target ID with Telegram; stored names prove nothing."""
+    try:
+        if type(target_id) is not int or target_id <= 0:
+            return None
+        target = await context.bot.get_chat(target_id)
+        if target.id != target_id or target.type != 'private':
+            return None
+        if expected_username is not None and (
+            not isinstance(target.username, str)
+            or target.username.casefold() != expected_username.casefold()
+        ):
+            return None
+        return target
+    except Exception as exc:
+        log_error('ROLE IDENTITY VERIFICATION ERROR:', exc)
+        return None
 
 
 def role_selection_keyboard(target_id, owner_id, current_role=None):
@@ -495,8 +513,8 @@ async def role_add_start(
 
     await query.edit_message_text(
         "➕ إضافة مشرف\n\n"
-        "أرسل Username الخاص بالشخص.\n"
-        "مثال: @username\n\n"
+        "أرسل Telegram User ID الرقمي الخاص بالشخص بعد التأكد منه.\n"
+        "يمكنك أيضًا إرسال @username للتحقق من صاحبه الحالي.\n\n"
         "⚠️ لازم الشخص يكون قد استخدم "
         "البوت مرة واحدة على الأقل حتى "
         "أگدر أتعرف عليه."
@@ -524,49 +542,40 @@ async def role_receive_username(
         await update.message.reply_text("⛔ ليس لديك صلاحية لإدارة المشرفين.")
         return ConversationHandler.END
 
-    username = (
+    identity = (
         update.message.text or ""
     ).strip()
 
-    username = username.lstrip(
-        "@"
-    ).strip()
-
-    if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", username):
+    numeric_id = int(identity) if re.fullmatch(r"[1-9][0-9]{0,18}", identity) else None
+    username = None if numeric_id is not None else identity.lstrip('@').strip()
+    if numeric_id is None and not re.fullmatch(r"[A-Za-z0-9_]{1,32}", username):
         await update.message.reply_text(
-            "❌ Username غير صحيح.\n"
-            "أرسله بهذا الشكل:\n"
-            "@username"
+            "❌ أرسل Telegram User ID رقميًا صحيحًا أو @username."
         )
 
         return ROLE_USERNAME
 
     try:
-        response = (
+        lookup = (
             supabase
             .table("telegram_users")
             .select(
                 "telegram_id, username, "
-                "first_name, last_name"
+                "first_name, last_name",
+                count='exact',
             )
-            .ilike(
-                "username",
-                username.replace("_", r"\_"),
-            )
-            .limit(1)
-            .execute()
         )
+        if numeric_id is not None:
+            lookup = lookup.eq('telegram_id', numeric_id)
+        else:
+            lookup = lookup.ilike('username', username.replace('_', r'\_'))
+        response = lookup.limit(2).execute()
 
     except Exception as exc:
-        print(
-            "ROLE USERNAME LOOKUP ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE USERNAME LOOKUP ERROR:', exc)
 
         await update.message.reply_text(
-            "❌ تعذر البحث عن Username.\n"
-            "تأكد أن جدول telegram_users موجود."
+            "❌ تعذر التحقق من المستخدم. أعد المحاولة لاحقًا."
         )
 
         clear_role_conversation(context)
@@ -576,29 +585,31 @@ async def role_receive_username(
 
     if not rows:
         await update.message.reply_text(
-            "❌ ما لكيت هذا Username.\n\n"
-            "تأكد من كتابته صحيح، وتأكد أن "
+            "❌ لم أجد هذا المستخدم.\n\n"
+            "تأكد من المعرّف، وتأكد أن "
             "الشخص استخدم البوت مرة واحدة "
             "على الأقل."
         )
 
         return ROLE_USERNAME
 
-    target_id = rows[0]["telegram_id"]
-
-    target_username = (
-        rows[0].get("username")
-        or username
-    )
-
-    target_name = " ".join(
-        part
-        for part in [
-            rows[0].get("first_name"),
-            rows[0].get("last_name"),
-        ]
-        if part
-    ).strip()
+    if len(rows) != 1 or response.count != 1:
+        clear_role_conversation(context)
+        await update.message.reply_text("❌ نتيجة غير مؤكدة. أعد العملية باستخدام Telegram User ID.")
+        return ConversationHandler.END
+    try:
+        target_id = int(rows[0]['telegram_id'])
+    except (KeyError, TypeError, ValueError):
+        target_id = None
+    if numeric_id is not None and target_id != numeric_id:
+        target_id = None
+    target = await _verify_role_identity(context, target_id, username)
+    if target is None:
+        clear_role_conversation(context)
+        await update.message.reply_text("❌ تعذر التحقق من هوية المستخدم الحالية. لم تُمنح أي صلاحية.")
+        return ConversationHandler.END
+    target_username = target.username or ''
+    target_name = ' '.join(part for part in (target.first_name, target.last_name) if part)
 
     # Never allow creating/changing an owner
     # through the normal role assignment flow.
@@ -634,11 +645,7 @@ async def role_receive_username(
             return ConversationHandler.END
 
     except Exception as exc:
-        print(
-            "ROLE TARGET VALIDATION ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE TARGET VALIDATION ERROR:', exc)
 
         await update.message.reply_text(
             "❌ تعذر التحقق من رتبة المستخدم."
@@ -656,16 +663,20 @@ async def role_receive_username(
     ] = target_username
     current = existing_rows[0] if existing_rows else {}
     context.admin_data["role_target_role"] = (current.get("role"), current.get("is_active") is True)
+    context.admin_data['role_identity_username'] = username
+    context.admin_data['role_identity_verified'] = True
 
     name_line = (
         f"👤 الاسم: {target_name}\n"
         if target_name
         else ""
     )
+    username_line = f"@{target_username}\n" if target_username else ""
 
     await update.message.reply_text(
         "👤 تم العثور على المستخدم.\n\n"
-        f"@{target_username}\n"
+        f"🆔 Telegram User ID: {target_id}\n"
+        f"{username_line}"
         f"{name_line}\n"
         "اختر الرتبة:",
         reply_markup=role_selection_keyboard(
@@ -748,6 +759,18 @@ async def set_role(
         )
         return
 
+    if context.admin_data.get('role_identity_verified') is not True or await _verify_role_identity(
+        context, target_id, context.admin_data.get('role_identity_username')
+    ) is None:
+        clear_role_conversation(context)
+        await query.answer("❌ تعذر تأكيد هوية المستخدم. أعد فتح العملية.", show_alert=True)
+        return ConversationHandler.END
+    # Identity verification awaits Telegram; grants may have been revoked meanwhile.
+    if not await has_permission(query.from_user.id, PERMISSION_MANAGE_ADMINS, refresh=True):
+        clear_role_conversation(context)
+        await query.answer("⛔ لم تعد لديك صلاحية لإدارة المشرفين.", show_alert=True)
+        return ConversationHandler.END
+
     try:
         existing = (
             supabase
@@ -799,6 +822,7 @@ async def set_role(
                     "id",
                     rows[0]["id"],
                 )
+                .eq('telegram_id', target_id)
                 .eq("role", current_role)
                 .eq("is_active", current.get("is_active"))
                 .execute()
@@ -819,11 +843,7 @@ async def set_role(
             )
 
     except Exception as exc:
-        print(
-            "ROLE SAVE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE SAVE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر حفظ الرتبة.",
@@ -852,7 +872,7 @@ async def set_role(
         (
             f"✅ تم إعطاء "
             f"{ROLE_NAMES.get(role, role)} "
-            f"لـ @{target_username}."
+            f"للمستخدم {target_id}."
         ),
         show_alert=True,
     )
@@ -957,6 +977,7 @@ async def role_manage(
         if username
         else str(admin["telegram_id"])
     )
+    identity += f"\n🆔 Telegram User ID: {admin['telegram_id']}"
 
     current_role = admin.get(
         "role"
@@ -1117,6 +1138,13 @@ async def change_role(
             await query.answer("❌ هذا الاختيار قديم أو الرتبة مطبقة بالفعل. أعد فتح القائمة.", show_alert=True)
             return
 
+        if await _verify_role_identity(context, int(target_id)) is None:
+            await query.answer("❌ تعذر التحقق من هوية المشرف. لم تتغير الصلاحيات.", show_alert=True)
+            return
+        if not await has_permission(query.from_user.id, PERMISSION_MANAGE_ADMINS, refresh=True):
+            await query.answer("⛔ لم تعد لديك صلاحية لإدارة المشرفين.", show_alert=True)
+            return
+
         saved = (
             supabase
             .table("admins")
@@ -1142,11 +1170,7 @@ async def change_role(
         )
 
     except Exception as exc:
-        print(
-            "ROLE CHANGE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE CHANGE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تغيير الرتبة.",
@@ -1266,11 +1290,7 @@ async def remove_role(
         )
 
     except Exception as exc:
-        print(
-            "ROLE REMOVE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('ROLE REMOVE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر إزالة الرتبة.",

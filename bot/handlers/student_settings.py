@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import (
@@ -133,11 +135,7 @@ async def _get_or_create_settings(
             return created[0]
 
     except Exception as exc:
-        print(
-            "GET USER SETTINGS ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GET USER SETTINGS ERROR:', exc)
 
     return {
         "telegram_id": user_id,
@@ -180,11 +178,7 @@ async def _update_settings(
         return True
 
     except Exception as exc:
-        print(
-            "UPDATE USER SETTINGS ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('UPDATE USER SETTINGS ERROR:', exc)
 
         return None
 
@@ -249,11 +243,7 @@ async def show_student_settings(
                 )
 
         except Exception as exc:
-            print(
-                "GET SELECTED STAGE ERROR:",
-                type(exc).__name__,
-                exc,
-            )
+            log_error('GET SELECTED STAGE ERROR:', exc)
 
     await query.edit_message_text(
         "⚙️ إعدادات الطالب\n\n"
@@ -299,11 +289,7 @@ async def show_settings_stages(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "GET SETTINGS STAGES ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('GET SETTINGS STAGES ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تحميل المراحل حاليًا.",
@@ -393,11 +379,7 @@ async def select_settings_stage(
         stages = response.data or []
 
     except Exception as exc:
-        print(
-            "CHECK SETTINGS STAGE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('CHECK SETTINGS STAGE ERROR:', exc)
 
         await query.answer(
             "❌ حدث خطأ أثناء اختيار المرحلة.",

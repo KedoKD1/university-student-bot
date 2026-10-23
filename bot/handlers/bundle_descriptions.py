@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -469,11 +471,7 @@ async def choose_description_subject(
             ).strip()
 
     except Exception as exc:
-        print(
-            "BUNDLE DESCRIPTION READ ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('BUNDLE DESCRIPTION READ ERROR:', exc)
 
     title = (
         "الملفات"
@@ -595,11 +593,7 @@ async def receive_description(
         )
 
     except Exception as exc:
-        print(
-            "BUNDLE DESCRIPTION SAVE ERROR:",
-            type(exc).__name__,
-            exc,
-        )
+        log_error('BUNDLE DESCRIPTION SAVE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ تعذر حفظ الوصف."

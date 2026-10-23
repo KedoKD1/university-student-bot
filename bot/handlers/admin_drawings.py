@@ -1,3 +1,5 @@
+from bot.utils.logging_security import log_error
+
 from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -1628,9 +1630,7 @@ async def receive_drawing_upload(
 
     except Exception as exc:
         clear_drawing_conversation(context)
-        print(
-            f"DRAWING INSERT ERROR: {exc}"
-        )
+        log_error('DRAWING INSERT ERROR:', exc)
 
         await message.reply_text(
             "❌ حدث خطأ أثناء حفظ الرسمة "
@@ -1902,9 +1902,7 @@ async def receive_edit_drawing_order(
 
     except Exception as exc:
         clear_drawing_conversation(context)
-        print(
-            f"DRAWING UPDATE ERROR: {exc}"
-        )
+        log_error('DRAWING UPDATE ERROR:', exc)
 
         await update.message.reply_text(
             "❌ حدث خطأ أثناء تعديل الرسمة."
@@ -2033,9 +2031,7 @@ async def toggle_drawing(
         )
 
     except Exception as exc:
-        print(
-            f"DRAWING TOGGLE ERROR: {exc}"
-        )
+        log_error('DRAWING TOGGLE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر تحديث حالة الرسمة.",
@@ -2245,9 +2241,7 @@ async def confirm_delete_drawing(
         )
 
     except Exception as exc:
-        print(
-            f"DRAWING DELETE ERROR: {exc}"
-        )
+        log_error('DRAWING DELETE ERROR:', exc)
 
         await query.answer(
             "❌ تعذر حذف الرسمة.",
