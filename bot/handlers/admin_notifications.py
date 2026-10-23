@@ -1060,9 +1060,20 @@ async def notification_confirm(
 
         return ConversationHandler.END
 
-    if status == "sent":
+    if total == 0 and successful == 0 and failed == 0:
+        result_title = (
+            "ℹ️ لم يتم إرسال التبليغ.\n"
+            "لا يوجد مستلمون مؤهلون لاستلام الإشعار."
+        )
+
+    elif status == "sent":
         result_title = (
             "✅ تم إرسال التبليغ بنجاح."
+        )
+
+    elif status == "failed":
+        result_title = (
+            "❌ تعذّر إرسال التبليغ."
         )
 
     else:
